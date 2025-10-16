@@ -77,10 +77,14 @@ async def chat_endpoint(request: ChatRequest):
     Endpoint principal para el chat con el agente de Bedrock.
     """
     try:
+        print(f"🚀 [API] Mensaje: {request.message[:50]}...")
+        
         response = bedrock_service.invoke_agent(
             user_input=request.message,
             session_id=request.session_id
         )
+        
+        print(f"📤 [API] Respuesta: {response.get('response_source', 'unknown')} ({len(response.get('response', '')) if response.get('response') else 0} chars)")
         
         return ChatResponse(
             success=response.get("success", False),
@@ -91,6 +95,7 @@ async def chat_endpoint(request: ChatRequest):
         )
         
     except Exception as e:
+        print(f"❌ [API] Error: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error interno del servidor: {str(e)}"
@@ -201,4 +206,5 @@ async def get_database_stats():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+
 

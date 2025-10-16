@@ -113,3 +113,4 @@ Este backend mantiene **toda la lógica original**:
 
 Solo se agregó **FastAPI como capa de API** para el frontend React.
 
+
