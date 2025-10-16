@@ -3,8 +3,6 @@ import boto3
 import uuid
 import sys
 import time
-import json
-import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 from botocore.config import Config
@@ -15,37 +13,6 @@ src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(src_path))
 
 from config.settings import bedrock_config
-
-
-def _extract_plain_answer_from_trace(trace_events):
-    """
-    Busca en orchestrationTrace.modelInvocationOutput.rawResponse.content el bloque
-    AgentCommunication__sendMessage → input.content y devuelve el texto tal como está.
-    """
-    try:
-        for ev in trace_events or []:
-            otrace = ev.get("trace", {}).get("orchestrationTrace", {})
-            mio = otrace.get("modelInvocationOutput", {})
-            raw = mio.get("rawResponse", {})
-            content_str = raw.get("content")
-            if not content_str:
-                continue
-
-            # 'content' es un JSON serializado en str → lo cargamos
-            payload = json.loads(content_str)
-            blocks = payload.get("output", {}).get("message", {}).get("content", [])
-
-            for b in blocks:
-                tool = b.get("toolUse")
-                if tool and tool.get("name") == "AgentCommunication__sendMessage":
-                    inner = (tool.get("input") or {}).get("content", "")
-                    if inner:
-                        # Solo normalizar escapes básicos, mantener el formato original
-                        inner = inner.replace("\\n", "\n").replace("\\t", "\t")
-                        return inner.strip() or None
-    except Exception:
-        pass
-    return None
 
 
 class BedrockAgentService:
@@ -76,7 +43,7 @@ class BedrockAgentService:
         self,
         user_input: str,
         session_id: Optional[str] = None,
-        enable_trace: bool = True,  # Cambiar a True por defecto para debugging
+        enable_trace: bool = False,
     ) -> Dict[str, Any]:
         """
         Invoca el agente de Bedrock con el input del usuario con lógica de reintentos.
@@ -92,11 +59,6 @@ class BedrockAgentService:
         # Generar session_id si no se proporciona
         if not session_id:
             session_id = str(uuid.uuid4())
-
-        print(f"🔍 [DEBUG] Invocando agente con:")
-        print(f"   - Input: {user_input}")
-        print(f"   - Session ID: {session_id}")
-        print(f"   - Enable Trace: {enable_trace}")
 
         params = {
             "agentId": self.agent_id,
@@ -192,7 +154,6 @@ class BedrockAgentService:
     def _process_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
         """
         Procesa la respuesta del agente de Bedrock (event stream -> texto).
-        Si el chunk final es corto (prefacio), busca la respuesta completa en el trace.
 
         Args:
             response: Respuesta cruda del cliente de Bedrock.
@@ -204,60 +165,24 @@ class BedrockAgentService:
             completion = ""
             trace_data = []
 
-            print(f"🔍 [DEBUG] Procesando respuesta del agente...")
-
             # Leer el stream de respuesta
             for event in response.get("completion", []):
                 if "chunk" in event:
                     chunk = event["chunk"]
                     if "bytes" in chunk:
-                        chunk_text = chunk["bytes"].decode("utf-8", errors="ignore")
-                        completion += chunk_text
-                        print(f"📝 [DEBUG] Chunk recibido: {chunk_text[:100]}...")
+                        completion += chunk["bytes"].decode("utf-8", errors="ignore")
 
                 if "trace" in event:
                     trace_data.append(event["trace"])
-                    print(f"🔍 [DEBUG] Trace recibido: {str(event['trace'])[:200]}...")
-
-            # Determinar la respuesta final
-            final_response = completion.strip()
-            response_source = "unknown"
-            
-            # Si el chunk final es corto (prefacio), buscar la respuesta completa en el trace
-            if len(completion.strip()) < 200:  # Umbral para detectar prefacio
-                print(f"🔍 [DEBUG] Chunk final corto detectado ({len(completion.strip())} chars), buscando respuesta completa en trace...")
-                
-                # Buscar respuesta completa en el trace usando la función proporcionada
-                trace_answer = _extract_plain_answer_from_trace(trace_data)
-                if trace_answer:
-                    final_response = trace_answer
-                    response_source = "knowledge_base"
-                    print(f"✅ [DEBUG] Respuesta completa encontrada en trace: {final_response[:200]}...")
-                else:
-                    print(f"⚠️ [DEBUG] No se encontró respuesta completa en trace, usando completion")
-            else:
-                print(f"✅ [DEBUG] Chunk final largo, usando completion directamente")
-
-            print(f"🎯 [DEBUG] Respuesta final determinada:")
-            print(f"   - Fuente: {response_source}")
-            print(f"   - Longitud: {len(final_response) if final_response else 0}")
-            print(f"   - Preview: {final_response[:200] if final_response else 'None'}...")
 
             return {
                 "success": True,
-                "response": final_response,
+                "response": completion.strip(),
                 "session_id": response.get("sessionId"),
                 "trace": trace_data if trace_data else None,
-                "response_source": response_source,
-                "debug_info": {
-                    "completion_length": len(completion),
-                    "trace_count": len(trace_data),
-                    "is_short_completion": len(completion.strip()) < 200
-                }
             }
 
         except Exception as e:
-            print(f"❌ [DEBUG] Error procesando respuesta: {str(e)}")
             return {
                 "success": False,
                 "error": str(e),
