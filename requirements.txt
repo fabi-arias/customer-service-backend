@@ -1,0 +1,9 @@
+# Backend API dependencies
+fastapi
+uvicorn[standard]
+python-dotenv
+boto3
+botocore
+requests
+psycopg2-binary
+pydantic
