@@ -12,12 +12,14 @@ from database.db_utils import get_db_connection
 
 app = Flask(__name__)
 
-API_KEY = os.getenv("INGEST_API_KEY", "cambia-esto")  # opcional
+API_KEY = os.getenv("INGEST_API_KEY")  # requerido para seguridad
 
 def auth_ok(req):
     """Verifica si la autenticación es válida."""
+    if not API_KEY:
+        return False  # Sin API_KEY configurada, denegar acceso
     key = req.headers.get("X-API-Key")
-    return (not API_KEY) or key == API_KEY or API_KEY == "cambia-esto"
+    return key == API_KEY
 
 @app.get("/health")
 def health():
