@@ -12,12 +12,16 @@ sys.path.insert(0, str(src_path))
 
 from services.bedrock_service import bedrock_service
 from database.db_utils import execute_query, test_connection
+from database.data_management_api import data_app
 
 app = FastAPI(
     title="Customer Service Chat API",
-    description="API para el chat de servicio al cliente con Bedrock Agent",
+    description="API completa para chat de servicio al cliente con Bedrock Agent e ingest de datos",
     version="1.0.0"
 )
+
+# Montar FastAPI de gestión de datos
+app.mount("/data", data_app)
 
 # Configurar CORS para el frontend
 app.add_middleware(
