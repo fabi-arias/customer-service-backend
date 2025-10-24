@@ -63,12 +63,6 @@ def get_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-from fastapi import APIRouter, Depends, HTTPException
-from typing import List
-import json
-
-data_app = APIRouter()
-
 @data_app.post("/tickets/batch")
 def ingest_batch(
     tickets: List[dict],
@@ -146,7 +140,6 @@ def ingest_batch(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error de conexión: {str(e)}")
-
 
 @data_app.get("/tickets/export")
 def export_resolved_tickets(
@@ -294,7 +287,7 @@ def tickets_by_source(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@data_app.get("/analytics/top_agents")
+@data_app.get("/analytics/agents")
 def top_agents(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date: str = Query(..., alias="to", description="YYYY-MM-DD"),
@@ -302,7 +295,8 @@ def top_agents(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Devuelve el ranking de agentes con más tickets cerrados en el rango.
+    Devuelve el ranking de agentes (owner) con más tickets cerrados en el rango.
+    Usa owner_name si existe; si no, cae en owner_id; si no, 'Sin asignar'.
     """
     try:
         from_dt = datetime.fromisoformat(from_date).date()
@@ -316,18 +310,19 @@ def top_agents(
     try:
         conn = get_db_connection()
         with conn, conn.cursor() as cur:
-            # Asumiendo que tienes un campo 'agent' o 'assigned_to' en tu tabla
-            # Si no existe, necesitarás agregarlo o usar otro campo
             cur.execute("""
                 SELECT
-                    COALESCE(NULLIF(TRIM(resolution), ''), 'Sin agente') AS agent,
+                    COALESCE(
+                        NULLIF(TRIM(owner_name), ''),
+                        NULLIF(TRIM(owner_id), ''),
+                        'Sin asignar'
+                    ) AS agent,
                     COUNT(*)::int AS count
                 FROM resolved_tickets
                 WHERE closed_at >= %s::date
-                  AND closed_at < (%s::date + INTERVAL '1 day')
-                  AND resolution IS NOT NULL
+                  AND closed_at <  (%s::date + INTERVAL '1 day')
                 GROUP BY 1
-                ORDER BY count DESC
+                ORDER BY count DESC, agent ASC
                 LIMIT %s
             """, (from_dt, to_dt, top))
             rows = cur.fetchall()
@@ -336,7 +331,7 @@ def top_agents(
             "success": True,
             "from": from_date,
             "to": to_date,
-            "agents": [{"agent": r[0], "count": r[1]} for r in rows]
+            "top_agents": [{"agent": r[0], "count": r[1]} for r in rows]
         }
 
     except Exception as e:
@@ -393,6 +388,555 @@ def closed_volume(
             "total_closed": total_closed,
             "by_day": [{"date": str(r[0]), "count": r[1]} for r in by_day_rows]
         }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@data_app.get("/analytics/subcategories")
+def tickets_by_subcategory(
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
+    to_date: str   = Query(..., alias="to",   description="YYYY-MM-DD"),
+    top: int       = Query(None, description="Opcional: limitar a los N pares category/subcategory más frecuentes"),
+    api_key: str   = Depends(verify_api_key)
+):
+    try:
+        from_dt = datetime.fromisoformat(from_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
+    if from_dt > to_dt:
+        raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
+
+    try:
+        conn = get_db_connection()
+        with conn, conn.cursor() as cur:
+            sql = """
+                SELECT
+                  COALESCE(NULLIF(TRIM(category), ''), 'Sin categoría')     AS category,
+                  COALESCE(NULLIF(TRIM(subcategory), ''), 'Sin subcategoría') AS subcategory,
+                  COUNT(*)::int AS count
+                FROM resolved_tickets
+                WHERE closed_at >= %s::date
+                  AND closed_at <  (%s::date + INTERVAL '1 day')
+                GROUP BY 1,2
+                ORDER BY count DESC, category ASC, subcategory ASC
+            """
+            if top and isinstance(top, int) and top > 0:
+                sql += " LIMIT %s"
+                cur.execute(sql, (from_dt, to_dt, top))
+            else:
+                cur.execute(sql, (from_dt, to_dt))
+            rows = cur.fetchall()
+
+        return {
+            "success": True,
+            "from": from_date,
+            "to": to_date,
+            "by_subcategory": [
+                {"category": r[0], "subcategory": r[1], "count": r[2]} for r in rows
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+    """
+    Promedio de tiempo de resolución *hábil* (solo 7:00–17:00 lun–vie) por agente.
+    - Promedio calculado por ticket y luego promediado por agente.
+    - Filtra agentes con menos de `min_tickets` tickets en el rango.
+    - Orden ascendente = agentes más rápidos primero.
+    """
+    # Validación de fechas
+    try:
+        from_dt = datetime.fromisoformat(from_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
+    if from_dt > to_dt:
+        raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
+
+    order_sql = "ASC" if order.lower() == "asc" else "DESC"
+
+    try:
+        conn = get_db_connection()
+        with conn, conn.cursor() as cur:
+            # 1) Sumar segundos hábiles por ticket (recortando 7:00–17:00 y excluyendo sábados/domingos)
+            # 2) Agrupar por (agent, ticket) para segundos por ticket
+            # 3) Promedio por agente (en horas)
+            cur.execute(f"""
+                WITH base AS (
+                  SELECT
+                    id,
+                    COALESCE(NULLIF(TRIM(owner_name),''), NULLIF(TRIM(owner_id),''), 'Sin asignar') AS agent,
+                    created_at,
+                    closed_at
+                  FROM resolved_tickets
+                  WHERE closed_at >= %s::date
+                    AND closed_at <  (%s::date + INTERVAL '1 day')
+                ),
+                days AS (
+                  SELECT
+                    b.id,
+                    b.agent,
+                    b.created_at,
+                    b.closed_at,
+                    generate_series(date_trunc('day', b.created_at),
+                                    date_trunc('day', b.closed_at),
+                                    interval '1 day') AS day_start
+                  FROM base b
+                ),
+                windows AS (
+                  SELECT
+                    id,
+                    agent,
+                    GREATEST(day_start + time '07:00', created_at) AS win_start,
+                    LEAST(day_start + time '17:00', closed_at)    AS win_end,
+                    EXTRACT(ISODOW FROM day_start)::int AS dow
+                  FROM days
+                ),
+                filtered AS (
+                  SELECT
+                    id,
+                    agent,
+                    CASE
+                      WHEN dow BETWEEN 1 AND 5 AND win_end > win_start
+                        THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
+                      ELSE 0
+                    END AS work_seconds
+                  FROM windows
+                ),
+                per_ticket AS (
+                  SELECT id, agent, SUM(work_seconds) AS sec_per_ticket
+                  FROM filtered
+                  GROUP BY id, agent
+                ),
+                per_agent AS (
+                  SELECT
+                    agent,
+                    ROUND(AVG(sec_per_ticket) / 3600.0, 2) AS avg_hours_business,
+                    COUNT(*) AS tickets
+                  FROM per_ticket
+                  GROUP BY agent
+                )
+                SELECT agent, avg_hours_business, tickets
+                FROM per_agent
+                WHERE tickets >= %s
+                ORDER BY avg_hours_business {order_sql}, agent ASC
+                LIMIT %s
+            """, (from_dt, to_dt, min_tickets, top))
+            rows = cur.fetchall()
+
+        return {
+            "success": True,
+            "from": from_date,
+            "to": to_date,
+            "by_agent": [
+                {"agent": r[0], "avg_hours_business": float(r[1] or 0), "tickets": int(r[2] or 0)}
+                for r in rows
+            ]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Promedio de horas hábiles por agente (L–V 07:00–17:00), rango inclusivo por día
+@data_app.get("/analytics/resolution_time/by_agent_business")
+def avg_resolution_time_by_agent_business(
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
+    to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
+    top:       Optional[int] = Query(None, description="Máximo de filas a devolver (orden asc por promedio). Si no se envía, devuelve todos."),
+    api_key:   str = Depends(verify_api_key)
+):
+    try:
+        from_dt = datetime.fromisoformat(from_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
+    if from_dt > to_dt:
+        raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
+
+    try:
+        conn = get_db_connection()
+        with conn, conn.cursor() as cur:
+            base_sql = """
+                WITH parametros AS (
+                  SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
+                ),
+                base AS (
+                  SELECT
+                    COALESCE(NULLIF(TRIM(t.owner_name), ''), 'Sin asignar') AS owner_name,
+                    t.hubspot_ticket_id,
+                    t.created_at,
+                    t.closed_at
+                  FROM resolved_tickets t
+                  WHERE t.closed_at >= %s::date
+                    AND t.closed_at <  (%s::date + INTERVAL '1 day')
+                ),
+                dias AS (
+                  SELECT
+                    b.owner_name,
+                    b.hubspot_ticket_id,
+                    b.created_at,
+                    b.closed_at,
+                    gs::date AS d
+                  FROM base b
+                  JOIN LATERAL generate_series(
+                    date_trunc('day', b.created_at),
+                    date_trunc('day', b.closed_at),
+                    interval '1 day'
+                  ) gs ON TRUE
+                ),
+                ventanas AS (
+                  SELECT
+                    owner_name,
+                    hubspot_ticket_id,
+                    GREATEST(d + (SELECT hora_inicio_laboral FROM parametros), created_at) AS win_start,
+                    LEAST   (d + (SELECT hora_fin_laboral   FROM parametros), closed_at)  AS win_end,
+                    EXTRACT(DOW FROM d)::int AS dow
+                  FROM dias
+                ),
+                filtrado AS (
+                  SELECT
+                    owner_name,
+                    hubspot_ticket_id,
+                    CASE
+                      WHEN dow NOT IN (0,6) AND win_end > win_start
+                        THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
+                      ELSE 0
+                    END AS work_seconds
+                  FROM ventanas
+                ),
+                tiempos_por_ticket AS (
+                  SELECT
+                    owner_name,
+                    hubspot_ticket_id,
+                    SUM(work_seconds)/3600.0 AS horas_laborales_resolucion
+                  FROM filtrado
+                  GROUP BY owner_name, hubspot_ticket_id
+                ),
+                por_agente AS (
+                  SELECT
+                    owner_name,
+                    COUNT(*)::int AS total_tickets_cerrados,
+                    ROUND(AVG(horas_laborales_resolucion)::numeric, 2) AS promedio_horas
+                  FROM tiempos_por_ticket
+                  GROUP BY owner_name
+                )
+                SELECT owner_name, total_tickets_cerrados, promedio_horas
+                FROM por_agente
+                ORDER BY promedio_horas ASC, total_tickets_cerrados DESC, owner_name ASC
+            """
+            params = [from_dt, to_dt]
+            if top is not None:
+                sql = base_sql + " LIMIT %s"
+                params.append(top)
+            else:
+                sql = base_sql  # sin LIMIT
+
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()  # [(owner_name, total, promedio), ...]
+
+            items = [{
+                "agent": r[0],
+                "total_closed": int(r[1]) if r[1] is not None else 0,
+                "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
+            } for r in rows]
+
+        return {
+            "success": True,
+            "from": from_date,
+            "to": to_date,
+            "by_agent": items
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Nuevo endpoint: promedio de horas hábiles por ticket (rango) ---
+@data_app.get("/analytics/resolution_time/avg_business")
+def avg_resolution_time_business_v2(
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
+    to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
+    api_key:   str = Depends(verify_api_key)
+):
+    """
+    Calcula el tiempo de resolución promedio por ticket en horas hábiles,
+    considerando solo L-V y la ventana 07:00–17:00 (horario YA está almacenado en local CR).
+    """
+    try:
+        from_dt = datetime.fromisoformat(from_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
+    if from_dt > to_dt:
+        raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
+
+    try:
+        conn = get_db_connection()
+        with conn, conn.cursor() as cur:
+            cur.execute("""
+                WITH parametros AS (
+                  SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
+                ),
+                base AS (
+                  SELECT t.hubspot_ticket_id, t.created_at, t.closed_at
+                  FROM resolved_tickets t
+                  WHERE t.closed_at >= %s::date
+                    AND t.closed_at <  (%s::date + INTERVAL '1 day')
+                ),
+                dias AS (
+                  SELECT
+                    b.hubspot_ticket_id,
+                    b.created_at,
+                    b.closed_at,
+                    gs::date AS d
+                  FROM base b
+                  JOIN LATERAL generate_series(
+                    date_trunc('day', b.created_at),
+                    date_trunc('day', b.closed_at),
+                    interval '1 day'
+                  ) gs ON TRUE
+                ),
+                ventanas AS (
+                  SELECT
+                    hubspot_ticket_id,
+                    GREATEST(d + (SELECT hora_inicio_laboral FROM parametros), created_at) AS win_start,
+                    LEAST   (d + (SELECT hora_fin_laboral   FROM parametros), closed_at)  AS win_end,
+                    EXTRACT(DOW FROM d)::int AS dow
+                  FROM dias
+                ),
+                filtrado AS (
+                  SELECT
+                    hubspot_ticket_id,
+                    CASE
+                      WHEN dow NOT IN (0,6) AND win_end > win_start
+                        THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
+                      ELSE 0
+                    END AS work_seconds
+                  FROM ventanas
+                ),
+                tiempos_por_ticket AS (
+                  SELECT hubspot_ticket_id,
+                         SUM(work_seconds)/3600.0 AS horas_laborales_resolucion
+                  FROM filtrado
+                  GROUP BY hubspot_ticket_id
+                )
+                SELECT
+                  COUNT(*)::int AS total_tickets_cerrados,
+                  ROUND(AVG(horas_laborales_resolucion)::numeric, 2) AS promedio_general_horas
+                FROM tiempos_por_ticket;
+            """, (from_dt, to_dt))
+
+            row = cur.fetchone()  # (total_tickets_cerrados, promedio_general_horas)
+            total = int(row[0]) if row and row[0] is not None else 0
+            avg   = float(row[1]) if row and row[1] is not None else 0.0
+
+        return {
+            "success": True,
+            "from": from_date,
+            "to": to_date,
+            "avg_hours_business": avg,
+            "total_closed": total
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@data_app.get("/analytics/resolution_time/by_source_business")
+def avg_resolution_time_by_source_business(
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
+    to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
+    order:     str = Query("asc", description="asc = más rápidos primero; desc = más lentos primero"),
+    api_key:   str = Depends(verify_api_key)
+):
+    """
+    Promedio de tiempo de resolución por canal (source) contando solo horas hábiles
+    (lun–vie, 07:00–17:00). Calculado ticket a ticket y luego promediado por canal.
+    """
+    try:
+        from_dt = datetime.fromisoformat(from_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
+    if from_dt > to_dt:
+        raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
+
+    order_sql = "ASC" if str(order).lower() == "asc" else "DESC"
+
+    try:
+        conn = get_db_connection()
+        with conn, conn.cursor() as cur:
+            cur.execute(f"""
+                WITH parametros AS (
+                  SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
+                ),
+                base AS (
+                  SELECT
+                    COALESCE(NULLIF(TRIM(t.source), ''), 'Desconocido') AS source,
+                    t.hubspot_ticket_id,
+                    t.created_at,
+                    t.closed_at
+                  FROM resolved_tickets t
+                  WHERE t.closed_at >= %s::date
+                    AND t.closed_at <  (%s::date + INTERVAL '1 day')
+                ),
+                dias AS (
+                  SELECT
+                    b.source,
+                    b.hubspot_ticket_id,
+                    b.created_at,
+                    b.closed_at,
+                    gs::date AS d
+                  FROM base b
+                  JOIN LATERAL generate_series(
+                    date_trunc('day', b.created_at),
+                    date_trunc('day', b.closed_at),
+                    interval '1 day'
+                  ) gs ON TRUE
+                ),
+                ventanas AS (
+                  SELECT
+                    source,
+                    hubspot_ticket_id,
+                    GREATEST(d + (SELECT hora_inicio_laboral FROM parametros), created_at) AS win_start,
+                    LEAST   (d + (SELECT hora_fin_laboral   FROM parametros), closed_at)  AS win_end,
+                    EXTRACT(DOW FROM d)::int AS dow
+                  FROM dias
+                ),
+                filtrado AS (
+                  SELECT
+                    source,
+                    hubspot_ticket_id,
+                    CASE
+                      WHEN dow NOT IN (0,6) AND win_end > win_start
+                        THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
+                      ELSE 0
+                    END AS work_seconds
+                  FROM ventanas
+                ),
+                tiempos_por_ticket AS (
+                  SELECT
+                    source,
+                    hubspot_ticket_id,
+                    SUM(work_seconds)/3600.0 AS horas_laborales_resolucion
+                  FROM filtrado
+                  GROUP BY source, hubspot_ticket_id
+                ),
+                por_source AS (
+                  SELECT
+                    source,
+                    COUNT(*)::int AS total_tickets_cerrados,
+                    ROUND(AVG(horas_laborales_resolucion)::numeric, 2) AS promedio_horas
+                  FROM tiempos_por_ticket
+                  GROUP BY source
+                )
+                SELECT source, total_tickets_cerrados, promedio_horas
+                FROM por_source
+                ORDER BY promedio_horas {order_sql}, total_tickets_cerrados DESC, source ASC;
+            """, (from_dt, to_dt))
+
+            rows = cur.fetchall()
+            items = [{
+                "source": r[0],
+                "tickets": int(r[1]) if r[1] is not None else 0,
+                "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
+            } for r in rows]
+
+        return {
+            "success": True,
+            "from": from_date,
+            "to": to_date,
+            "by_source": items
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@data_app.get("/analytics/resolution_time/slow_cases_business")
+def slow_cases_business(
+    from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
+    to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
+    top:       int = Query(10, description="Máximo de tickets a devolver"),
+    api_key:   str = Depends(verify_api_key)
+):
+    try:
+        from_dt = datetime.fromisoformat(from_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
+    if from_dt > to_dt:
+        raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
+
+    try:
+        conn = get_db_connection()
+        with conn, conn.cursor() as cur:
+            cur.execute("""
+                WITH parametros AS (
+                  SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
+                ),
+                base AS (
+                  SELECT
+                    t.hubspot_ticket_id,
+                    t.subject,
+                    COALESCE(NULLIF(TRIM(t.owner_name), ''), 'Sin asignar') AS owner_name,
+                    t.source,
+                    t.created_at,
+                    t.closed_at
+                  FROM resolved_tickets t
+                  WHERE t.closed_at >= %s::date
+                    AND t.closed_at <  (%s::date + INTERVAL '1 day')
+                ),
+                dias AS (
+                  SELECT
+                    b.hubspot_ticket_id, b.subject, b.owner_name, b.source, b.created_at, b.closed_at,
+                    gs::date AS d
+                  FROM base b
+                  JOIN LATERAL generate_series(
+                    date_trunc('day', b.created_at),
+                    date_trunc('day', b.closed_at),
+                    interval '1 day'
+                  ) gs ON TRUE
+                ),
+                ventanas AS (
+                  SELECT
+                    hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
+                    GREATEST(d + (SELECT hora_inicio_laboral FROM parametros), created_at) AS win_start,
+                    LEAST   (d + (SELECT hora_fin_laboral   FROM parametros), closed_at)  AS win_end,
+                    EXTRACT(DOW FROM d)::int AS dow
+                  FROM dias
+                ),
+                filtrado AS (
+                  SELECT
+                    hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
+                    CASE WHEN dow NOT IN (0,6) AND win_end > win_start
+                          THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
+                         ELSE 0 END AS work_seconds
+                  FROM ventanas
+                ),
+                tiempos_por_ticket AS (
+                  SELECT
+                    hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
+                    SUM(work_seconds)/3600.0 AS horas_laborales_resolucion
+                  FROM filtrado
+                  GROUP BY hubspot_ticket_id, subject, owner_name, source, created_at, closed_at
+                )
+                SELECT
+                  hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
+                  ROUND(horas_laborales_resolucion::numeric, 2) AS horas_laborales_resolucion
+                FROM tiempos_por_ticket
+                ORDER BY horas_laborales_resolucion DESC, closed_at DESC
+                LIMIT %s;
+            """, (from_dt, to_dt, top))
+            rows = cur.fetchall()
+
+        items = [{
+            "hubspot_ticket_id": r[0],
+            "subject": r[1],
+            "owner_name": r[2],
+            "source": r[3],
+            "created_at": r[4].isoformat() if r[4] else None,
+            "closed_at":  r[5].isoformat() if r[5] else None,
+            "hours_business_resolution": float(r[6]) if r[6] is not None else 0.0
+        } for r in rows]
+
+        return {"success": True, "from": from_date, "to": to_date, "top": top, "cases": items}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
