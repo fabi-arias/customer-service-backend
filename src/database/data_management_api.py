@@ -432,112 +432,14 @@ def tickets_by_subcategory(
             "success": True,
             "from": from_date,
             "to": to_date,
-            "by_subcategory": [
+            "top_subcategories": [ 
                 {"category": r[0], "subcategory": r[1], "count": r[2]} for r in rows
             ]
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-    """
-    Promedio de tiempo de resolución *hábil* (solo 7:00–17:00 lun–vie) por agente.
-    - Promedio calculado por ticket y luego promediado por agente.
-    - Filtra agentes con menos de `min_tickets` tickets en el rango.
-    - Orden ascendente = agentes más rápidos primero.
-    """
-    # Validación de fechas
-    try:
-        from_dt = datetime.fromisoformat(from_date).date()
-        to_dt   = datetime.fromisoformat(to_date).date()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
-    if from_dt > to_dt:
-        raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
-
-    order_sql = "ASC" if order.lower() == "asc" else "DESC"
-
-    try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            # 1) Sumar segundos hábiles por ticket (recortando 7:00–17:00 y excluyendo sábados/domingos)
-            # 2) Agrupar por (agent, ticket) para segundos por ticket
-            # 3) Promedio por agente (en horas)
-            cur.execute(f"""
-                WITH base AS (
-                  SELECT
-                    id,
-                    COALESCE(NULLIF(TRIM(owner_name),''), NULLIF(TRIM(owner_id),''), 'Sin asignar') AS agent,
-                    created_at,
-                    closed_at
-                  FROM resolved_tickets
-                  WHERE closed_at >= %s::date
-                    AND closed_at <  (%s::date + INTERVAL '1 day')
-                ),
-                days AS (
-                  SELECT
-                    b.id,
-                    b.agent,
-                    b.created_at,
-                    b.closed_at,
-                    generate_series(date_trunc('day', b.created_at),
-                                    date_trunc('day', b.closed_at),
-                                    interval '1 day') AS day_start
-                  FROM base b
-                ),
-                windows AS (
-                  SELECT
-                    id,
-                    agent,
-                    GREATEST(day_start + time '07:00', created_at) AS win_start,
-                    LEAST(day_start + time '17:00', closed_at)    AS win_end,
-                    EXTRACT(ISODOW FROM day_start)::int AS dow
-                  FROM days
-                ),
-                filtered AS (
-                  SELECT
-                    id,
-                    agent,
-                    CASE
-                      WHEN dow BETWEEN 1 AND 5 AND win_end > win_start
-                        THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
-                      ELSE 0
-                    END AS work_seconds
-                  FROM windows
-                ),
-                per_ticket AS (
-                  SELECT id, agent, SUM(work_seconds) AS sec_per_ticket
-                  FROM filtered
-                  GROUP BY id, agent
-                ),
-                per_agent AS (
-                  SELECT
-                    agent,
-                    ROUND(AVG(sec_per_ticket) / 3600.0, 2) AS avg_hours_business,
-                    COUNT(*) AS tickets
-                  FROM per_ticket
-                  GROUP BY agent
-                )
-                SELECT agent, avg_hours_business, tickets
-                FROM per_agent
-                WHERE tickets >= %s
-                ORDER BY avg_hours_business {order_sql}, agent ASC
-                LIMIT %s
-            """, (from_dt, to_dt, min_tickets, top))
-            rows = cur.fetchall()
-
-        return {
-            "success": True,
-            "from": from_date,
-            "to": to_date,
-            "by_agent": [
-                {"agent": r[0], "avg_hours_business": float(r[1] or 0), "tickets": int(r[2] or 0)}
-                for r in rows
-            ]
-        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 # Promedio de horas hábiles por agente (L–V 07:00–17:00), rango inclusivo por día
 @data_app.get("/analytics/resolution_time/by_agent_business")
