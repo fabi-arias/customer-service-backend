@@ -203,21 +203,20 @@ def export_resolved_tickets(
 @data_app.get("/analytics/categories")
 def top_categories(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
-    to_date: str = Query(..., alias="to", description="YYYY-MM-DD"),
-    top: int = Query(10, description="Número de categorías a retornar"),
-    api_key: str = Depends(verify_api_key)
+    to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
+    top:       int = Query(10, description="Número de categorías a retornar"),
+    api_key:   str = Depends(verify_api_key)
 ):
     """
-    Devuelve las categorías más frecuentes de tickets resueltos en un rango de fechas.
+    Devuelve las categorías más frecuentes de tickets resueltos en un rango de fechas,
+    SIEMPRE con chartSpec (Vega-Lite) listo para visualizar.
     """
-    # Parsear como fechas (no datetimes)
+    # --- Validación de fechas ---
     try:
         from_dt = datetime.fromisoformat(from_date).date()
-        to_dt = datetime.fromisoformat(to_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
     except Exception:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
-
-    # Validación simple: from <= to
     if from_dt > to_dt:
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
@@ -238,29 +237,70 @@ def top_categories(
             """, (from_dt, to_dt, top))
             rows = cur.fetchall()
 
-        return {
+        items = [{"category": r[0], "count": r[1]} for r in rows]
+        total = sum(it["count"] for it in items)
+
+        # Altura dinámica para que no se encimen etiquetas (≈28 px por barra + margen)
+        dyn_height = max(200, 28 * max(1, len(items)) + 40)
+
+        payload = {
             "success": True,
+            "metric": "Top de categorías por tickets cerrados",
             "from": from_date,
             "to": to_date,
-            "top_categories": [{"category": r[0], "count": r[1]} for r in rows]
+            "params": {"top": top},
+            "top_categories": items,
+            "total": total,
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Top de categorías por tickets cerrados",
+                "data": {"values": {"$ref": "top_categories"}},
+                "mark": {"type": "bar"},
+                "width": 560,
+                "height": dyn_height,
+                "encoding": {
+                    # X cuantitativo: por defecto en barras incluye 0 (bueno para contexto)
+                    "x": {
+                        "field": "count",
+                        "type": "quantitative",
+                        "axis": {"title": "Tickets cerrados", "format": "d"},
+                        "scale": {"nice": True}
+                    },
+                    # Y nominal: categorías, ordenadas por valor descendente
+                    "y": {
+                        "field": "category",
+                        "type": "nominal",
+                        "sort": "-x",
+                        "axis": {"title": "Categoría", "labelLimit": 300}
+                    },
+                    "tooltip": [
+                        {"field": "category", "type": "nominal", "title": "Categoría"},
+                        {"field": "count",    "type": "quantitative", "title": "Cerrados", "format": "d"}
+                    ]
+                }
+            }
         }
+        return payload
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @data_app.get("/analytics/sources")
 def tickets_by_source(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
-    to_date: str = Query(..., alias="to", description="YYYY-MM-DD"),
-    api_key: str = Depends(verify_api_key)
+    to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
+    api_key:   str = Depends(verify_api_key)
 ):
-    """Análisis de tickets por fuente."""
+    """
+    Distribución de tickets por canal (source), SIEMPRE con chartSpec (Vega-Lite).
+    """
+    # Validación de fechas
     try:
         from_dt = datetime.fromisoformat(from_date).date()
-        to_dt = datetime.fromisoformat(to_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
     except Exception:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
-
     if from_dt > to_dt:
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
@@ -280,30 +320,69 @@ def tickets_by_source(
             rows = cur.fetchall()
 
         total = sum(r[1] for r in rows) or 1
-        items = [{"source": r[0], "count": r[1], "pct": round(r[1]*100/total,1)} for r in rows]
+        items = [{"source": r[0], "count": r[1], "pct": round(r[1]*100/total, 1)} for r in rows]
 
-        return {"success": True, "from": from_date, "to": to_date, "by_source": items}
+        # Altura dinámica (~28px por barra + margen)
+        dyn_height = max(200, 28 * max(1, len(items)) + 40)
+
+        payload = {
+            "success": True,
+            "metric": "by_source",
+            "from": from_date,
+            "to": to_date,
+            "by_source": items,
+            "total": sum(it["count"] for it in items),
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Distribución por canal",
+                "data": {"values": {"$ref": "by_source"}},
+                "mark": {"type": "bar"},
+                "width": 560,
+                "height": dyn_height,
+                "encoding": {
+                    "x": {
+                        "field": "count",
+                        "type": "quantitative",
+                        "axis": {"title": "Tickets cerrados", "format": "d"},
+                        "scale": {"nice": True}
+                    },
+                    "y": {
+                        "field": "source",
+                        "type": "nominal",
+                        "sort": "-x",
+                        "axis": {"title": "Canal", "labelLimit": 260}
+                    },
+                    "tooltip": [
+                        {"field": "source", "type": "nominal", "title": "Canal"},
+                        {"field": "count",  "type": "quantitative", "title": "Cerrados", "format": "d"},
+                        {"field": "pct",    "type": "quantitative", "title": "%", "format": ".1f"}
+                    ]
+                }
+            }
+        }
+        return payload
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @data_app.get("/analytics/agents")
 def top_agents(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
-    to_date: str = Query(..., alias="to", description="YYYY-MM-DD"),
-    top: int = Query(10, description="Número de agentes a retornar"),
-    api_key: str = Depends(verify_api_key)
+    to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
+    top:       int = Query(10, description="Número de agentes a retornar"),
+    api_key:   str = Depends(verify_api_key)
 ):
     """
-    Devuelve el ranking de agentes (owner) con más tickets cerrados en el rango.
-    Usa owner_name si existe; si no, cae en owner_id; si no, 'Sin asignar'.
+    Ranking de agentes por tickets cerrados en el rango.
+    Siempre devuelve chartSpec (Vega-Lite) con {"$ref":"top_agents"}.
     """
+    # Validación de fechas
     try:
         from_dt = datetime.fromisoformat(from_date).date()
-        to_dt = datetime.fromisoformat(to_date).date()
+        to_dt   = datetime.fromisoformat(to_date).date()
     except Exception:
         raise HTTPException(status_code=400, detail="Formato de fecha inválido (use YYYY-MM-DD)")
-
     if from_dt > to_dt:
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
@@ -327,15 +406,52 @@ def top_agents(
             """, (from_dt, to_dt, top))
             rows = cur.fetchall()
 
-        return {
+        items = [{"agent": r[0], "count": r[1]} for r in rows]
+        total = sum(it["count"] for it in items)
+
+        # Altura dinámica: ~28px por barra
+        dyn_height = max(200, 28 * max(1, len(items)) + 40)
+
+        payload = {
             "success": True,
+            "metric": "Top de agentes por tickets cerrados",
             "from": from_date,
             "to": to_date,
-            "top_agents": [{"agent": r[0], "count": r[1]} for r in rows]
+            "params": {"top": top},
+            "top_agents": items,
+            "total": total,
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Top de agentes por tickets cerrados",
+                "data": {"values": {"$ref": "top_agents"}},
+                "mark": {"type": "bar"},
+                "width": 560,
+                "height": dyn_height,
+                "encoding": {
+                    "x": {
+                        "field": "count",
+                        "type": "quantitative",
+                        "axis": {"title": "Tickets cerrados", "format": "d"},
+                        "scale": {"nice": True}
+                    },
+                    "y": {
+                        "field": "agent",
+                        "type": "nominal",
+                        "sort": "-x",
+                        "axis": {"title": "Agente", "labelLimit": 300}
+                    },
+                    "tooltip": [
+                        {"field": "agent", "type": "nominal", "title": "Agente"},
+                        {"field": "count", "type": "quantitative", "title": "Cerrados", "format": "d"}
+                    ]
+                }
+            }
         }
+        return payload
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @data_app.get("/analytics/closed_volume")
 def closed_volume(
@@ -344,9 +460,10 @@ def closed_volume(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Devuelve el total de tickets cerrados en el rango y opcionalmente
-    el desglose diario para análisis de picos/tendencia.
+    Devuelve el total de tickets cerrados en el rango, el desglose diario (completando días sin datos con 0)
+    y un chartSpec (Vega-Lite) listo para visualización SIN problemas de zona horaria (eje X categórico).
     """
+    # --- Validación de fechas ---
     try:
         from_dt = datetime.fromisoformat(from_date).date()
         to_dt = datetime.fromisoformat(to_date).date()
@@ -368,37 +485,96 @@ def closed_volume(
             """, (from_dt, to_dt))
             total_closed = cur.fetchone()[0]
 
-            # Desglose por día
+            # Conteo por día real
             cur.execute("""
                 SELECT 
                     DATE(closed_at) AS date,
-                    COUNT(*)::int AS count
+                    COUNT(*)::int   AS count
                 FROM resolved_tickets
                 WHERE closed_at >= %s::date
-                  AND closed_at < (%s::date + INTERVAL '1 day')
+                  AND closed_at <  (%s::date + INTERVAL '1 day')
                 GROUP BY DATE(closed_at)
-                ORDER BY date DESC
             """, (from_dt, to_dt))
-            by_day_rows = cur.fetchall()
+            rows = cur.fetchall()  # [(date, count), ...]
 
-        return {
+        # --- Completar días faltantes con 0 y ordenar ASC ---
+        counts = {str(d): c for (d, c) in rows}
+        by_day = []
+        d = from_dt
+        while d <= to_dt:
+            key = d.strftime("%Y-%m-%d")
+            by_day.append({"date": key, "count": int(counts.get(key, 0))})
+            d += timedelta(days=1)
+
+        # --- Escala Y dinámica: si hay 0 en los datos, arranca en 0; si no, usa [min, max] con nice ---
+        counts_only = [item["count"] for item in by_day]
+        if counts_only:
+            min_val = min(counts_only)
+            max_val = max(counts_only)
+        else:
+            min_val = 0
+            max_val = 0
+
+        if min_val == 0:
+            y_scale = {"zero": True, "nice": True}
+        else:
+            y_scale = {"domain": [min_val, max_val], "nice": True}
+
+        payload = {
             "success": True,
+            "metric": "Volumen de tickets cerrados",
             "from": from_date,
             "to": to_date,
             "total_closed": total_closed,
-            "by_day": [{"date": str(r[0]), "count": r[1]} for r in by_day_rows]
+            "by_day": by_day,  # p.ej. [{"date":"2025-10-20","count":0}, {"date":"2025-10-21","count":104}, ...]
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Evolución diaria de tickets cerrados",
+                "data": {"values": {"$ref": "by_day"}},
+                "mark": {"type": "line", "point": True},
+                "width": 500,
+                "height": 300,
+                "encoding": {
+                    "x": {
+                        "field": "date",
+                        "type": "ordinal",     # categórico: una etiqueta por fecha, sin TZ
+                        "sort": None,          # respeta el orden del array by_day (ASC)
+                        "axis": {
+                            "title": "Fecha",
+                            "labelAngle": -30,
+                            "labelOverlap": False
+                        }
+                    },
+                    "y": {
+                        "field": "count",
+                        "type": "quantitative",
+                        "axis": {"format": "d", "title": "Tickets cerrados"},
+                        "scale": y_scale       # << escala dinámica
+                    },
+                    "tooltip": [
+                        {"field": "date",  "type": "ordinal", "title": "Fecha"},
+                        {"field": "count", "type": "quantitative", "title": "Cerrados"}
+                    ]
+                }
+            }
         }
+        return payload
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @data_app.get("/analytics/subcategories")
 def tickets_by_subcategory(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
-    to_date: str   = Query(..., alias="to",   description="YYYY-MM-DD"),
-    top: int       = Query(None, description="Opcional: limitar a los N pares category/subcategory más frecuentes"),
-    api_key: str   = Depends(verify_api_key)
+    to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
+    top:       int | None = Query(None, description="Opcional: limitar a los N pares category/subcategory más frecuentes"),
+    api_key:   str = Depends(verify_api_key)
 ):
+    """
+    Top de pares (categoría/subcategoría), SIEMPRE con chartSpec (Vega-Lite).
+    """
+    # Validación de fechas
     try:
         from_dt = datetime.fromisoformat(from_date).date()
         to_dt   = datetime.fromisoformat(to_date).date()
@@ -412,7 +588,7 @@ def tickets_by_subcategory(
         with conn, conn.cursor() as cur:
             sql = """
                 SELECT
-                  COALESCE(NULLIF(TRIM(category), ''), 'Sin categoría')     AS category,
+                  COALESCE(NULLIF(TRIM(category), ''), 'Sin categoría')       AS category,
                   COALESCE(NULLIF(TRIM(subcategory), ''), 'Sin subcategoría') AS subcategory,
                   COUNT(*)::int AS count
                 FROM resolved_tickets
@@ -428,14 +604,58 @@ def tickets_by_subcategory(
                 cur.execute(sql, (from_dt, to_dt))
             rows = cur.fetchall()
 
-        return {
+        items = [{"category": r[0], "subcategory": r[1], "count": r[2]} for r in rows]
+        total = sum(it["count"] for it in items)
+
+        # Altura dinámica según número de barras
+        dyn_height = max(220, 26 * max(1, len(items)) + 60)
+
+        payload = {
             "success": True,
+            "metric": "top_subcategories",
             "from": from_date,
             "to": to_date,
-            "top_subcategories": [ 
-                {"category": r[0], "subcategory": r[1], "count": r[2]} for r in rows
-            ]
+            "params": {"top": top} if top else {},
+            "top_subcategories": items,
+            "total": total,
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Top de subcategorías (Categoría — Subcategoría)",
+                "data": {"values": {"$ref": "top_subcategories"}},
+                # Creamos una etiqueta combinada "Categoría — Subcategoría" para el eje Y
+                "transform": [
+                    {"calculate": "datum.category + ' — ' + datum.subcategory", "as": "label"}
+                ],
+                "mark": {"type": "bar"},
+                "width": 680,
+                "height": dyn_height,
+                "encoding": {
+                    "x": {
+                        "field": "count",
+                        "type": "quantitative",
+                        "axis": {"title": "Tickets cerrados", "format": "d"},
+                        "scale": {"nice": True}
+                    },
+                    "y": {
+                        "field": "label",
+                        "type": "nominal",
+                        "sort": "-x",
+                        "axis": {"title": "Categoría — Subcategoría", "labelLimit": 480}
+                    },
+                    "color": {
+                        "field": "category",
+                        "type": "nominal",
+                        "legend": {"title": "Categoría"}
+                    },
+                    "tooltip": [
+                        {"field": "category",    "type": "nominal", "title": "Categoría"},
+                        {"field": "subcategory", "type": "nominal", "title": "Subcategoría"},
+                        {"field": "count",       "type": "quantitative", "title": "Cerrados", "format": "d"}
+                    ]
+                }
+            }
         }
+        return payload
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -533,10 +753,10 @@ def avg_resolution_time_by_agent_business(
                 sql = base_sql + " LIMIT %s"
                 params.append(top)
             else:
-                sql = base_sql  # sin LIMIT
+                sql = base_sql
 
             cur.execute(sql, tuple(params))
-            rows = cur.fetchall()  # [(owner_name, total, promedio), ...]
+            rows = cur.fetchall()
 
             items = [{
                 "agent": r[0],
@@ -544,16 +764,47 @@ def avg_resolution_time_by_agent_business(
                 "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
             } for r in rows]
 
-        return {
+        payload = {
             "success": True,
+            "metric": "Tiempo de resolución promedio por agente",
             "from": from_date,
             "to": to_date,
-            "by_agent": items
+            "by_agent": items,
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Horas hábiles promedio por agente",
+                "data": {"values": {"$ref": "by_agent"}},
+                "mark": {"type": "bar"},
+                "width": 640,
+                "height": 360,
+                "encoding": {
+                    "y": {
+                        "field": "agent",
+                        "type": "ordinal",
+                        "sort": None,  # respeta el orden del arreglo (ASC por promedio)
+                        "axis": {"title": "Agente"}
+                    },
+                    "x": {
+                        "field": "avg_hours_business",
+                        "type": "quantitative",
+                        "axis": {"title": "Horas hábiles (promedio)"},
+                        "scale": {"nice": True}
+                    },
+                    "tooltip": [
+                        {"field": "agent", "type": "ordinal", "title": "Agente"},
+                        {"field": "avg_hours_business", "type": "quantitative", "title": "Promedio (h)"},
+                        {"field": "total_closed", "type": "quantitative", "title": "Tickets"}
+                    ]
+                }
+            }
         }
+        return payload
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Nuevo endpoint: promedio de horas hábiles por ticket (rango) ---
+
+# --- Promedio de horas hábiles global por ticket (rango) ---
 @data_app.get("/analytics/resolution_time/avg_business")
 def avg_resolution_time_business_v2(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
@@ -561,8 +812,8 @@ def avg_resolution_time_business_v2(
     api_key:   str = Depends(verify_api_key)
 ):
     """
-    Calcula el tiempo de resolución promedio por ticket en horas hábiles,
-    considerando solo L-V y la ventana 07:00–17:00 (horario YA está almacenado en local CR).
+    Calcula el tiempo de resolución promedio por ticket en horas hábiles
+    (L–V, 07:00–17:00). Devuelve también un chartSpec tipo 'big number'.
     """
     try:
         from_dt = datetime.fromisoformat(from_date).date()
@@ -628,19 +879,50 @@ def avg_resolution_time_business_v2(
                 FROM tiempos_por_ticket;
             """, (from_dt, to_dt))
 
-            row = cur.fetchone()  # (total_tickets_cerrados, promedio_general_horas)
+            row = cur.fetchone()
             total = int(row[0]) if row and row[0] is not None else 0
             avg   = float(row[1]) if row and row[1] is not None else 0.0
 
-        return {
+        payload = {
             "success": True,
+            "metric": "Tiempo de resolución promedio",
             "from": from_date,
             "to": to_date,
             "avg_hours_business": avg,
-            "total_closed": total
+            "total_closed": total,
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Promedio de horas hábiles (big number)",
+                "data": {
+                    "values": [
+                        {"label": "Promedio (h)", "hours": avg}
+                    ]
+                },
+                "mark": {"type": "text"},
+                "width": 480,
+                "height": 160,
+                "encoding": {
+                    "text": {
+                        "field": "hours",
+                        "type": "quantitative",
+                        "format": ".2f"
+                    }
+                },
+                "config": {
+                    "text": {
+                        "fontSize": 42,
+                        "align": "center",
+                        "baseline": "middle"
+                    },
+                    "view": {"stroke": "transparent"}
+                }
+            }
         }
+        return payload
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @data_app.get("/analytics/resolution_time/by_source_business")
 def avg_resolution_time_by_source_business(
@@ -652,6 +934,7 @@ def avg_resolution_time_by_source_business(
     """
     Promedio de tiempo de resolución por canal (source) contando solo horas hábiles
     (lun–vie, 07:00–17:00). Calculado ticket a ticket y luego promediado por canal.
+    Devuelve chartSpec de barras horizontales.
     """
     try:
         from_dt = datetime.fromisoformat(from_date).date()
@@ -661,7 +944,10 @@ def avg_resolution_time_by_source_business(
     if from_dt > to_dt:
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
-    order_sql = "ASC" if str(order).lower() == "asc" else "DESC"
+    order_norm = (order or "asc").lower()
+    if order_norm not in ("asc", "desc"):
+        order_norm = "asc"
+    order_sql = "ASC" if order_norm == "asc" else "DESC"
 
     try:
         conn = get_db_connection()
@@ -742,14 +1028,48 @@ def avg_resolution_time_by_source_business(
                 "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
             } for r in rows]
 
-        return {
+        # sort visual en Vega-Lite alineado con 'order'
+        y_sort = "-x" if order_norm == "desc" else "x"
+
+        payload = {
             "success": True,
+            "metric": "Tiempo de resolución promedio por canal",
             "from": from_date,
             "to": to_date,
-            "by_source": items
+            "by_source": items,
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Horas hábiles promedio por canal",
+                "data": {"values": {"$ref": "by_source"}},
+                "mark": {"type": "bar"},
+                "width": 640,
+                "height": 360,
+                "encoding": {
+                    "y": {
+                        "field": "source",
+                        "type": "ordinal",
+                        "sort": y_sort,  # ordena por el valor en X
+                        "axis": {"title": "Canal"}
+                    },
+                    "x": {
+                        "field": "avg_hours_business",
+                        "type": "quantitative",
+                        "axis": {"title": "Horas hábiles (promedio)"},
+                        "scale": {"nice": True}
+                    },
+                    "tooltip": [
+                        {"field": "source", "type": "ordinal", "title": "Canal"},
+                        {"field": "avg_hours_business", "type": "quantitative", "title": "Promedio (h)"},
+                        {"field": "tickets", "type": "quantitative", "title": "Tickets"}
+                    ]
+                }
+            }
         }
+        return payload
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @data_app.get("/analytics/resolution_time/slow_cases_business")
 def slow_cases_business(
@@ -758,6 +1078,10 @@ def slow_cases_business(
     top:       int = Query(10, description="Máximo de tickets a devolver"),
     api_key:   str = Depends(verify_api_key)
 ):
+    """
+    Casos más lentos por tiempo de resolución en horas hábiles (L–V, 07:00–17:00).
+    Siempre devuelve chartSpec (Vega-Lite) con {"$ref":"cases"}.
+    """
     try:
         from_dt = datetime.fromisoformat(from_date).date()
         to_dt   = datetime.fromisoformat(to_date).date()
@@ -778,7 +1102,7 @@ def slow_cases_business(
                     t.hubspot_ticket_id,
                     t.subject,
                     COALESCE(NULLIF(TRIM(t.owner_name), ''), 'Sin asignar') AS owner_name,
-                    t.source,
+                    COALESCE(NULLIF(TRIM(t.source), ''), 'Desconocido')    AS source,
                     t.created_at,
                     t.closed_at
                   FROM resolved_tickets t
@@ -838,7 +1162,58 @@ def slow_cases_business(
             "hours_business_resolution": float(r[6]) if r[6] is not None else 0.0
         } for r in rows]
 
-        return {"success": True, "from": from_date, "to": to_date, "top": top, "cases": items}
+        # Altura dinámica (~26px por barra)
+        dyn_height = max(220, 26 * max(1, len(items)) + 60)
+
+        payload = {
+            "success": True,
+            "metric": "Casos más lentos",
+            "from": from_date,
+            "to": to_date,
+            "top": top,
+            "cases": items,
+            "chartSpec": {
+                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                "description": "Casos más lentos (horas hábiles)",
+                "data": {"values": {"$ref": "cases"}},
+                "transform": [
+                    {
+                        "calculate": "datum.hubspot_ticket_id + ' — ' + (isValid(datum.subject) && length(datum.subject) > 0 ? datum.subject : 'Sin asunto')",
+                        "as": "label"
+                    }
+                ],
+                "mark": {"type": "bar"},
+                "width": 760,
+                "height": dyn_height,
+                "encoding": {
+                    "x": {
+                        "field": "hours_business_resolution",
+                        "type": "quantitative",
+                        "axis": {"title": "Horas hábiles de resolución"},
+                        "scale": {"nice": True}
+                    },
+                    "y": {
+                        "field": "label",
+                        "type": "nominal",
+                        "sort": "-x",
+                        "axis": {"title": "Ticket — Asunto", "labelLimit": 560}
+                    },
+                    "color": {
+                        "field": "source",
+                        "type": "nominal",
+                        "legend": {"title": "Canal"}
+                    },
+                    "tooltip": [
+                        {"field": "hubspot_ticket_id", "type": "nominal", "title": "Ticket"},
+                        {"field": "subject",              "type": "nominal", "title": "Asunto"},
+                        {"field": "owner_name",           "type": "nominal", "title": "Agente"},
+                        {"field": "source",               "type": "nominal", "title": "Canal"},
+                        {"field": "hours_business_resolution", "type": "quantitative", "title": "Horas hábiles"}
+                    ]
+                }
+            }
+        }
+        return payload
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
