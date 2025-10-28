@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Optional
+from visual.vega_brand import vega_config_brand
+
 
 # imports del proyecto
 src_path = Path(__file__).parent.parent
@@ -200,6 +202,7 @@ def export_resolved_tickets(
 
     return StreamingResponse(generate_ndjson(), media_type="application/x-ndjson")
 
+
 @data_app.get("/analytics/categories")
 def top_categories(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
@@ -240,7 +243,7 @@ def top_categories(
         items = [{"category": r[0], "count": r[1]} for r in rows]
         total = sum(it["count"] for it in items)
 
-        # Altura dinámica para que no se encimen etiquetas (≈28 px por barra + margen)
+        # Altura dinámica para evitar solapamiento (~28 px por barra + margen)
         dyn_height = max(200, 28 * max(1, len(items)) + 40)
 
         payload = {
@@ -259,7 +262,7 @@ def top_categories(
                 "width": 560,
                 "height": dyn_height,
                 "encoding": {
-                    # X cuantitativo: por defecto en barras incluye 0 (bueno para contexto)
+                    # X cuantitativo (incluye 0 por defecto en barras)
                     "x": {
                         "field": "count",
                         "type": "quantitative",
@@ -273,11 +276,19 @@ def top_categories(
                         "sort": "-x",
                         "axis": {"title": "Categoría", "labelLimit": 300}
                     },
+                    # 🎨 Usa la paleta universal (category range) por categoría
+                    "color": {
+                        "field": "category",
+                        "type": "nominal",
+                        "legend": None
+                    },
                     "tooltip": [
                         {"field": "category", "type": "nominal", "title": "Categoría"},
                         {"field": "count",    "type": "quantitative", "title": "Cerrados", "format": "d"}
                     ]
-                }
+                },
+                # ✅ Aplica tu config global (paleta celeste y estilos)
+                "config": vega_config_brand()
             }
         }
         return payload
@@ -295,7 +306,6 @@ def tickets_by_source(
     """
     Distribución de tickets por canal (source), SIEMPRE con chartSpec (Vega-Lite).
     """
-    # Validación de fechas
     try:
         from_dt = datetime.fromisoformat(from_date).date()
         to_dt   = datetime.fromisoformat(to_date).date()
@@ -327,11 +337,11 @@ def tickets_by_source(
 
         payload = {
             "success": True,
-            "metric": "by_source",
+            "metric": "Distribución de tickets por canal",
             "from": from_date,
             "to": to_date,
             "by_source": items,
-            "total": sum(it["count"] for it in items),
+            "total": total,
             "chartSpec": {
                 "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
                 "description": "Distribución por canal",
@@ -352,14 +362,22 @@ def tickets_by_source(
                         "sort": "-x",
                         "axis": {"title": "Canal", "labelLimit": 260}
                     },
+                    # 👇 Esta línea activa la paleta celeste de vega_config_brand()
+                    "color": {
+                        "field": "source",
+                        "type": "nominal",
+                        "legend": None
+                    },
                     "tooltip": [
                         {"field": "source", "type": "nominal", "title": "Canal"},
                         {"field": "count",  "type": "quantitative", "title": "Cerrados", "format": "d"},
                         {"field": "pct",    "type": "quantitative", "title": "%", "format": ".1f"}
                     ]
-                }
+                },
+                "config": vega_config_brand()
             }
         }
+
         return payload
 
     except Exception as e:
@@ -440,11 +458,17 @@ def top_agents(
                         "sort": "-x",
                         "axis": {"title": "Agente", "labelLimit": 300}
                     },
+                    "color": {
+                        "field": "agent",
+                        "type": "nominal",
+                        "legend": None
+                    },
                     "tooltip": [
                         {"field": "agent", "type": "nominal", "title": "Agente"},
                         {"field": "count", "type": "quantitative", "title": "Cerrados", "format": "d"}
                     ]
-                }
+                },
+                "config": vega_config_brand()
             }
         }
         return payload
@@ -555,7 +579,8 @@ def closed_volume(
                         {"field": "date",  "type": "ordinal", "title": "Fecha"},
                         {"field": "count", "type": "quantitative", "title": "Cerrados"}
                     ]
-                }
+                },
+                "config": vega_config_brand()
             }
         }
         return payload
@@ -652,7 +677,8 @@ def tickets_by_subcategory(
                         {"field": "subcategory", "type": "nominal", "title": "Subcategoría"},
                         {"field": "count",       "type": "quantitative", "title": "Cerrados", "format": "d"}
                     ]
-                }
+                },
+                "config": vega_config_brand()
             }
         }
         return payload
@@ -790,12 +816,18 @@ def avg_resolution_time_by_agent_business(
                         "axis": {"title": "Horas hábiles (promedio)"},
                         "scale": {"nice": True}
                     },
+                    "color": {
+                        "field": "source",
+                        "type": "nominal",
+                        "legend": None
+                    },
                     "tooltip": [
                         {"field": "agent", "type": "ordinal", "title": "Agente"},
                         {"field": "avg_hours_business", "type": "quantitative", "title": "Promedio (h)"},
                         {"field": "total_closed", "type": "quantitative", "title": "Tickets"}
                     ]
-                }
+                },
+                "config": vega_config_brand()
             }
         }
         return payload
@@ -805,16 +837,20 @@ def avg_resolution_time_by_agent_business(
 
 
 # --- Promedio de horas hábiles global por ticket (rango) ---
+from visual.vega_brand import vega_config_brand
+
 @data_app.get("/analytics/resolution_time/avg_business")
-def avg_resolution_time_business_v2(
+def avg_resolution_time_business(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
     api_key:   str = Depends(verify_api_key)
 ):
     """
     Calcula el tiempo de resolución promedio por ticket en horas hábiles
-    (L–V, 07:00–17:00). Devuelve también un chartSpec tipo 'big number'.
+    (L–V, 07:00–17:00). Devuelve también un chartSpec tipo 'big number'
+    aplicando la paleta/estilo de marca (celestes) desde vega_config_brand().
     """
+    # --- Validación de fechas ---
     try:
         from_dt = datetime.fromisoformat(from_date).date()
         to_dt   = datetime.fromisoformat(to_date).date()
@@ -883,6 +919,24 @@ def avg_resolution_time_business_v2(
             total = int(row[0]) if row and row[0] is not None else 0
             avg   = float(row[1]) if row and row[1] is not None else 0.0
 
+        # --- Merge de config de marca + overrides del big number ---
+        brand_cfg = vega_config_brand()
+        # Copias para no mutar el objeto original
+        text_cfg = dict(brand_cfg.get("text", {}))
+        view_cfg = dict(brand_cfg.get("view", {}))
+        # Overrides específicos del big number
+        text_cfg.update({
+            "fontSize": 42,
+            "align": "center",
+            "baseline": "middle",
+            # opcional: fija color del número (si no, usa el default de la marca)
+            "color": text_cfg.get("color", "#00A9E0")
+        })
+        view_cfg.update({"stroke": "transparent"})
+        merged_cfg = dict(brand_cfg)
+        merged_cfg["text"] = text_cfg
+        merged_cfg["view"] = view_cfg
+
         payload = {
             "success": True,
             "metric": "Tiempo de resolución promedio",
@@ -899,8 +953,9 @@ def avg_resolution_time_business_v2(
                     ]
                 },
                 "mark": {"type": "text"},
-                "width": 480,
-                "height": 160,
+                "width": 200,
+                "height": 100,
+                "autosize": {"type": "none"},
                 "encoding": {
                     "text": {
                         "field": "hours",
@@ -908,14 +963,7 @@ def avg_resolution_time_business_v2(
                         "format": ".2f"
                     }
                 },
-                "config": {
-                    "text": {
-                        "fontSize": 42,
-                        "align": "center",
-                        "baseline": "middle"
-                    },
-                    "view": {"stroke": "transparent"}
-                }
+                "config": merged_cfg
             }
         }
         return payload
@@ -1030,6 +1078,7 @@ def avg_resolution_time_by_source_business(
 
         # sort visual en Vega-Lite alineado con 'order'
         y_sort = "-x" if order_norm == "desc" else "x"
+        dyn_height = max(200, 28 * max(1, len(items)) + 40)
 
         payload = {
             "success": True,
@@ -1042,8 +1091,8 @@ def avg_resolution_time_by_source_business(
                 "description": "Horas hábiles promedio por canal",
                 "data": {"values": {"$ref": "by_source"}},
                 "mark": {"type": "bar"},
-                "width": 640,
-                "height": 360,
+                "width": 560,
+                "height": dyn_height,
                 "encoding": {
                     "y": {
                         "field": "source",
@@ -1057,12 +1106,18 @@ def avg_resolution_time_by_source_business(
                         "axis": {"title": "Horas hábiles (promedio)"},
                         "scale": {"nice": True}
                     },
+                    "color": {
+                        "field": "source",
+                        "type": "nominal",
+                        "legend": None
+                    },
                     "tooltip": [
                         {"field": "source", "type": "ordinal", "title": "Canal"},
                         {"field": "avg_hours_business", "type": "quantitative", "title": "Promedio (h)"},
                         {"field": "tickets", "type": "quantitative", "title": "Tickets"}
                     ]
-                }
+                },
+                "config": vega_config_brand()
             }
         }
         return payload
@@ -1210,7 +1265,8 @@ def slow_cases_business(
                         {"field": "source",               "type": "nominal", "title": "Canal"},
                         {"field": "hours_business_resolution", "type": "quantitative", "title": "Horas hábiles"}
                     ]
-                }
+                },
+                "config": vega_config_brand()
             }
         }
         return payload
