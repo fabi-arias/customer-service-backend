@@ -47,6 +47,18 @@ cp /Users/fabianaariasrosales/Desktop/customer-service-chat/.env .
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+Si Address already in use:
+# opción segura: SIGTERM
+lsof -tiTCP:8000 | xargs kill -15
+
+# si alguno queda vivo, fuerza:
+lsof -tiTCP:8000 | xargs kill -9
+
+Verificar que quedó libre:
+lsof -nP -iTCP:8000 | grep LISTEN || echo "puerto 8000 libre ✅"
+
+
+
 **✅ Deberías ver:**
 ```
 INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)

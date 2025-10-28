@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import List, Optional
-from visual.vega_brand import vega_config_brand
 
 
 # imports del proyecto
@@ -211,8 +210,8 @@ def top_categories(
     api_key:   str = Depends(verify_api_key)
 ):
     """
-    Devuelve las categorías más frecuentes de tickets resueltos en un rango de fechas,
-    SIEMPRE con chartSpec (Vega-Lite) listo para visualizar.
+    Devuelve las categorías más frecuentes de tickets resueltos en un rango de fechas.
+    Frontend aplica template de visualización automáticamente.
     """
     # --- Validación de fechas ---
     try:
@@ -243,52 +242,25 @@ def top_categories(
         items = [{"category": r[0], "count": r[1]} for r in rows]
         total = sum(it["count"] for it in items)
 
-        # Altura dinámica para evitar solapamiento (~28 px por barra + margen)
-        dyn_height = max(200, 28 * max(1, len(items)) + 40)
-
+        # Frontend template-based approach
         payload = {
             "success": True,
             "metric": "Top de categorías por tickets cerrados",
             "from": from_date,
             "to": to_date,
             "params": {"top": top},
-            "top_categories": items,
             "total": total,
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Top de categorías por tickets cerrados",
-                "data": {"values": {"$ref": "top_categories"}},
-                "mark": {"type": "bar"},
-                "width": 560,
-                "height": dyn_height,
-                "encoding": {
-                    # X cuantitativo (incluye 0 por defecto en barras)
-                    "x": {
-                        "field": "count",
-                        "type": "quantitative",
-                        "axis": {"title": "Tickets cerrados", "format": "d"},
-                        "scale": {"nice": True}
-                    },
-                    # Y nominal: categorías, ordenadas por valor descendente
-                    "y": {
-                        "field": "category",
-                        "type": "nominal",
-                        "sort": "-x",
-                        "axis": {"title": "Categoría", "labelLimit": 300}
-                    },
-                    # 🎨 Usa la paleta universal (category range) por categoría
-                    "color": {
-                        "field": "category",
-                        "type": "nominal",
-                        "legend": None
-                    },
-                    "tooltip": [
-                        {"field": "category", "type": "nominal", "title": "Categoría"},
-                        {"field": "count",    "type": "quantitative", "title": "Cerrados", "format": "d"}
-                    ]
-                },
-                # ✅ Aplica tu config global (paleta celeste y estilos)
-                "config": vega_config_brand()
+            # Data + chartType hint (frontend genera el chartSpec)
+            "data": items,
+            "chartType": "bar",
+            "metadata": {
+                "xField": "count",
+                "yField": "category",
+                "xType": "quantitative",
+                "yType": "nominal",
+                "sortBy": "-x",
+                "xTitle": "Tickets cerrados",
+                "yTitle": "Categoría"
             }
         }
         return payload
@@ -304,7 +276,7 @@ def tickets_by_source(
     api_key:   str = Depends(verify_api_key)
 ):
     """
-    Distribución de tickets por canal (source), SIEMPRE con chartSpec (Vega-Lite).
+    Distribución de tickets por canal (source). Frontend aplica template automáticamente.
     """
     try:
         from_dt = datetime.fromisoformat(from_date).date()
@@ -332,52 +304,26 @@ def tickets_by_source(
         total = sum(r[1] for r in rows) or 1
         items = [{"source": r[0], "count": r[1], "pct": round(r[1]*100/total, 1)} for r in rows]
 
-        # Altura dinámica (~28px por barra + margen)
-        dyn_height = max(200, 28 * max(1, len(items)) + 40)
-
         payload = {
             "success": True,
             "metric": "Distribución de tickets por canal",
             "from": from_date,
             "to": to_date,
-            "by_source": items,
             "total": total,
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Distribución por canal",
-                "data": {"values": {"$ref": "by_source"}},
-                "mark": {"type": "bar"},
-                "width": 560,
-                "height": dyn_height,
-                "encoding": {
-                    "x": {
-                        "field": "count",
-                        "type": "quantitative",
-                        "axis": {"title": "Tickets cerrados", "format": "d"},
-                        "scale": {"nice": True}
-                    },
-                    "y": {
-                        "field": "source",
-                        "type": "nominal",
-                        "sort": "-x",
-                        "axis": {"title": "Canal", "labelLimit": 260}
-                    },
-                    # 👇 Esta línea activa la paleta celeste de vega_config_brand()
-                    "color": {
-                        "field": "source",
-                        "type": "nominal",
-                        "legend": None
-                    },
-                    "tooltip": [
-                        {"field": "source", "type": "nominal", "title": "Canal"},
-                        {"field": "count",  "type": "quantitative", "title": "Cerrados", "format": "d"},
-                        {"field": "pct",    "type": "quantitative", "title": "%", "format": ".1f"}
-                    ]
-                },
-                "config": vega_config_brand()
+            # Template-based approach
+            "data": items,
+            "chartType": "bar",
+            "metadata": {
+                "xField": "count",
+                "yField": "source",
+                "xType": "quantitative",
+                "yType": "nominal",
+                "sortBy": "-x",
+                "xTitle": "Tickets cerrados",
+                "yTitle": "Canal",
+                "labelLimit": 260
             }
         }
-
         return payload
 
     except Exception as e:
@@ -393,7 +339,7 @@ def top_agents(
 ):
     """
     Ranking de agentes por tickets cerrados en el rango.
-    Siempre devuelve chartSpec (Vega-Lite) con {"$ref":"top_agents"}.
+    Frontend aplica template automáticamente.
     """
     # Validación de fechas
     try:
@@ -427,48 +373,25 @@ def top_agents(
         items = [{"agent": r[0], "count": r[1]} for r in rows]
         total = sum(it["count"] for it in items)
 
-        # Altura dinámica: ~28px por barra
-        dyn_height = max(200, 28 * max(1, len(items)) + 40)
-
         payload = {
             "success": True,
             "metric": "Top de agentes por tickets cerrados",
             "from": from_date,
             "to": to_date,
             "params": {"top": top},
-            "top_agents": items,
             "total": total,
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Top de agentes por tickets cerrados",
-                "data": {"values": {"$ref": "top_agents"}},
-                "mark": {"type": "bar"},
-                "width": 560,
-                "height": dyn_height,
-                "encoding": {
-                    "x": {
-                        "field": "count",
-                        "type": "quantitative",
-                        "axis": {"title": "Tickets cerrados", "format": "d"},
-                        "scale": {"nice": True}
-                    },
-                    "y": {
-                        "field": "agent",
-                        "type": "nominal",
-                        "sort": "-x",
-                        "axis": {"title": "Agente", "labelLimit": 300}
-                    },
-                    "color": {
-                        "field": "agent",
-                        "type": "nominal",
-                        "legend": None
-                    },
-                    "tooltip": [
-                        {"field": "agent", "type": "nominal", "title": "Agente"},
-                        {"field": "count", "type": "quantitative", "title": "Cerrados", "format": "d"}
-                    ]
-                },
-                "config": vega_config_brand()
+            # Template-based approach
+            "data": items,
+            "chartType": "bar",
+            "metadata": {
+                "xField": "count",
+                "yField": "agent",
+                "xType": "quantitative",
+                "yType": "nominal",
+                "sortBy": "-x",
+                "xTitle": "Tickets cerrados",
+                "yTitle": "Agente",
+                "labelLimit": 300
             }
         }
         return payload
@@ -484,8 +407,8 @@ def closed_volume(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Devuelve el total de tickets cerrados en el rango, el desglose diario (completando días sin datos con 0)
-    y un chartSpec (Vega-Lite) listo para visualización SIN problemas de zona horaria (eje X categórico).
+    Devuelve el total de tickets cerrados en el rango y el desglose diario.
+    Frontend aplica template de línea automáticamente.
     """
     # --- Validación de fechas ---
     try:
@@ -530,59 +453,41 @@ def closed_volume(
             by_day.append({"date": key, "count": int(counts.get(key, 0))})
             d += timedelta(days=1)
 
-        # --- Escala Y dinámica: si hay 0 en los datos, arranca en 0; si no, usa [min, max] con nice ---
-        counts_only = [item["count"] for item in by_day]
-        if counts_only:
-            min_val = min(counts_only)
-            max_val = max(counts_only)
-        else:
-            min_val = 0
-            max_val = 0
-
-        if min_val == 0:
-            y_scale = {"zero": True, "nice": True}
-        else:
-            y_scale = {"domain": [min_val, max_val], "nice": True}
-
-        payload = {
-            "success": True,
-            "metric": "Volumen de tickets cerrados",
-            "from": from_date,
-            "to": to_date,
-            "total_closed": total_closed,
-            "by_day": by_day,  # p.ej. [{"date":"2025-10-20","count":0}, {"date":"2025-10-21","count":104}, ...]
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Evolución diaria de tickets cerrados",
-                "data": {"values": {"$ref": "by_day"}},
-                "mark": {"type": "line", "point": True},
-                "width": 500,
-                "height": 300,
-                "encoding": {
-                    "x": {
-                        "field": "date",
-                        "type": "ordinal",     # categórico: una etiqueta por fecha, sin TZ
-                        "sort": None,          # respeta el orden del array by_day (ASC)
-                        "axis": {
-                            "title": "Fecha",
-                            "labelAngle": -30,
-                            "labelOverlap": False
-                        }
-                    },
-                    "y": {
-                        "field": "count",
-                        "type": "quantitative",
-                        "axis": {"format": "d", "title": "Tickets cerrados"},
-                        "scale": y_scale       # << escala dinámica
-                    },
-                    "tooltip": [
-                        {"field": "date",  "type": "ordinal", "title": "Fecha"},
-                        {"field": "count", "type": "quantitative", "title": "Cerrados"}
-                    ]
-                },
-                "config": vega_config_brand()
+        # If single day (from == to), show as BigNumber instead of line chart
+        if from_dt == to_dt:
+            payload = {
+                "success": True,
+                "metric": "Tickets cerrados",
+                "from": from_date,
+                "to": to_date,
+                "total_closed": total_closed,
+                # chartSpec mínimo solo para que el parser lo detecte como big number
+                "chartSpec": {
+                    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                    "description": "Tickets cerrados (big number)",
+                    "mark": {"type": "text"}
+                }
             }
-        }
+        else:
+            # Multiple days: show as line chart
+            payload = {
+                "success": True,
+                "metric": "Volumen de tickets cerrados",
+                "from": from_date,
+                "to": to_date,
+                "total_closed": total_closed,
+                # Template-based line chart
+                "data": by_day,
+                "chartType": "line",
+                "metadata": {
+                    "xField": "date",
+                    "yField": "count",
+                    "xType": "ordinal",
+                    "yType": "quantitative",
+                    "xTitle": "Fecha",
+                    "yTitle": "Tickets cerrados"
+                }
+            }
         return payload
 
     except Exception as e:
@@ -597,7 +502,7 @@ def tickets_by_subcategory(
     api_key:   str = Depends(verify_api_key)
 ):
     """
-    Top de pares (categoría/subcategoría), SIEMPRE con chartSpec (Vega-Lite).
+    Top de pares (categoría/subcategoría). Frontend aplica template automáticamente.
     """
     # Validación de fechas
     try:
@@ -632,53 +537,32 @@ def tickets_by_subcategory(
         items = [{"category": r[0], "subcategory": r[1], "count": r[2]} for r in rows]
         total = sum(it["count"] for it in items)
 
-        # Altura dinámica según número de barras
-        dyn_height = max(220, 26 * max(1, len(items)) + 60)
+        # Add combined label for display
+        items_with_label = [{
+            **item,
+            "label": f"{item['category']} — {item['subcategory']}"
+        } for item in items]
 
         payload = {
             "success": True,
-            "metric": "top_subcategories",
+            "metric": "Top de subcategorías",
             "from": from_date,
             "to": to_date,
             "params": {"top": top} if top else {},
-            "top_subcategories": items,
             "total": total,
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Top de subcategorías (Categoría — Subcategoría)",
-                "data": {"values": {"$ref": "top_subcategories"}},
-                # Creamos una etiqueta combinada "Categoría — Subcategoría" para el eje Y
-                "transform": [
-                    {"calculate": "datum.category + ' — ' + datum.subcategory", "as": "label"}
-                ],
-                "mark": {"type": "bar"},
-                "width": 680,
-                "height": dyn_height,
-                "encoding": {
-                    "x": {
-                        "field": "count",
-                        "type": "quantitative",
-                        "axis": {"title": "Tickets cerrados", "format": "d"},
-                        "scale": {"nice": True}
-                    },
-                    "y": {
-                        "field": "label",
-                        "type": "nominal",
-                        "sort": "-x",
-                        "axis": {"title": "Categoría — Subcategoría", "labelLimit": 480}
-                    },
-                    "color": {
-                        "field": "category",
-                        "type": "nominal",
-                        "legend": {"title": "Categoría"}
-                    },
-                    "tooltip": [
-                        {"field": "category",    "type": "nominal", "title": "Categoría"},
-                        {"field": "subcategory", "type": "nominal", "title": "Subcategoría"},
-                        {"field": "count",       "type": "quantitative", "title": "Cerrados", "format": "d"}
-                    ]
-                },
-                "config": vega_config_brand()
+            # Template-based approach with combined label
+            "data": items_with_label,
+            "chartType": "bar",
+            "metadata": {
+                "xField": "count",
+                "yField": "label",
+                "xType": "quantitative",
+                "yType": "nominal",
+                "sortBy": "-x",
+                "xTitle": "Tickets cerrados",
+                "yTitle": "Categoría — Subcategoría",
+                "labelLimit": 480,
+                "colorField": "category"
             }
         }
         return payload
@@ -795,39 +679,17 @@ def avg_resolution_time_by_agent_business(
             "metric": "Tiempo de resolución promedio por agente",
             "from": from_date,
             "to": to_date,
-            "by_agent": items,
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Horas hábiles promedio por agente",
-                "data": {"values": {"$ref": "by_agent"}},
-                "mark": {"type": "bar"},
-                "width": 640,
-                "height": 360,
-                "encoding": {
-                    "y": {
-                        "field": "agent",
-                        "type": "ordinal",
-                        "sort": None,  # respeta el orden del arreglo (ASC por promedio)
-                        "axis": {"title": "Agente"}
-                    },
-                    "x": {
-                        "field": "avg_hours_business",
-                        "type": "quantitative",
-                        "axis": {"title": "Horas hábiles (promedio)"},
-                        "scale": {"nice": True}
-                    },
-                    "color": {
-                        "field": "source",
-                        "type": "nominal",
-                        "legend": None
-                    },
-                    "tooltip": [
-                        {"field": "agent", "type": "ordinal", "title": "Agente"},
-                        {"field": "avg_hours_business", "type": "quantitative", "title": "Promedio (h)"},
-                        {"field": "total_closed", "type": "quantitative", "title": "Tickets"}
-                    ]
-                },
-                "config": vega_config_brand()
+            # Template-based approach
+            "data": items,
+            "chartType": "bar",
+            "metadata": {
+                "xField": "avg_hours_business",
+                "yField": "agent",
+                "xType": "quantitative",
+                "yType": "ordinal",
+                "sortBy": "x",  # ASC por horas promedio
+                "xTitle": "Horas hábiles (promedio)",
+                "yTitle": "Agente"
             }
         }
         return payload
@@ -837,8 +699,6 @@ def avg_resolution_time_by_agent_business(
 
 
 # --- Promedio de horas hábiles global por ticket (rango) ---
-from visual.vega_brand import vega_config_brand
-
 @data_app.get("/analytics/resolution_time/avg_business")
 def avg_resolution_time_business(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
@@ -847,8 +707,8 @@ def avg_resolution_time_business(
 ):
     """
     Calcula el tiempo de resolución promedio por ticket en horas hábiles
-    (L–V, 07:00–17:00). Devuelve también un chartSpec tipo 'big number'
-    aplicando la paleta/estilo de marca (celestes) desde vega_config_brand().
+    (L–V, 07:00–17:00). Devuelve un big number que el frontend renderiza
+    con BigNumberCard.
     """
     # --- Validación de fechas ---
     try:
@@ -919,24 +779,7 @@ def avg_resolution_time_business(
             total = int(row[0]) if row and row[0] is not None else 0
             avg   = float(row[1]) if row and row[1] is not None else 0.0
 
-        # --- Merge de config de marca + overrides del big number ---
-        brand_cfg = vega_config_brand()
-        # Copias para no mutar el objeto original
-        text_cfg = dict(brand_cfg.get("text", {}))
-        view_cfg = dict(brand_cfg.get("view", {}))
-        # Overrides específicos del big number
-        text_cfg.update({
-            "fontSize": 42,
-            "align": "center",
-            "baseline": "middle",
-            # opcional: fija color del número (si no, usa el default de la marca)
-            "color": text_cfg.get("color", "#00A9E0")
-        })
-        view_cfg.update({"stroke": "transparent"})
-        merged_cfg = dict(brand_cfg)
-        merged_cfg["text"] = text_cfg
-        merged_cfg["view"] = view_cfg
-
+        # Big number - Simple payload, frontend lo renderiza con BigNumberCard
         payload = {
             "success": True,
             "metric": "Tiempo de resolución promedio",
@@ -944,26 +787,11 @@ def avg_resolution_time_business(
             "to": to_date,
             "avg_hours_business": avg,
             "total_closed": total,
+            # chartSpec mínimo solo para que el parser lo detecte como big number
             "chartSpec": {
                 "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
                 "description": "Promedio de horas hábiles (big number)",
-                "data": {
-                    "values": [
-                        {"label": "Promedio (h)", "hours": avg}
-                    ]
-                },
-                "mark": {"type": "text"},
-                "width": 200,
-                "height": 100,
-                "autosize": {"type": "none"},
-                "encoding": {
-                    "text": {
-                        "field": "hours",
-                        "type": "quantitative",
-                        "format": ".2f"
-                    }
-                },
-                "config": merged_cfg
+                "mark": {"type": "text"}
             }
         }
         return payload
@@ -980,9 +808,8 @@ def avg_resolution_time_by_source_business(
     api_key:   str = Depends(verify_api_key)
 ):
     """
-    Promedio de tiempo de resolución por canal (source) contando solo horas hábiles
-    (lun–vie, 07:00–17:00). Calculado ticket a ticket y luego promediado por canal.
-    Devuelve chartSpec de barras horizontales.
+    Promedio de tiempo de resolución por canal (source) en horas hábiles.
+    Frontend aplica template automáticamente.
     """
     try:
         from_dt = datetime.fromisoformat(from_date).date()
@@ -1076,48 +903,24 @@ def avg_resolution_time_by_source_business(
                 "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
             } for r in rows]
 
-        # sort visual en Vega-Lite alineado con 'order'
-        y_sort = "-x" if order_norm == "desc" else "x"
-        dyn_height = max(200, 28 * max(1, len(items)) + 40)
-
+        # Template-based approach
+        sortBy = "-x" if order_norm == "desc" else "x"
+        
         payload = {
             "success": True,
             "metric": "Tiempo de resolución promedio por canal",
             "from": from_date,
             "to": to_date,
-            "by_source": items,
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Horas hábiles promedio por canal",
-                "data": {"values": {"$ref": "by_source"}},
-                "mark": {"type": "bar"},
-                "width": 560,
-                "height": dyn_height,
-                "encoding": {
-                    "y": {
-                        "field": "source",
-                        "type": "ordinal",
-                        "sort": y_sort,  # ordena por el valor en X
-                        "axis": {"title": "Canal"}
-                    },
-                    "x": {
-                        "field": "avg_hours_business",
-                        "type": "quantitative",
-                        "axis": {"title": "Horas hábiles (promedio)"},
-                        "scale": {"nice": True}
-                    },
-                    "color": {
-                        "field": "source",
-                        "type": "nominal",
-                        "legend": None
-                    },
-                    "tooltip": [
-                        {"field": "source", "type": "ordinal", "title": "Canal"},
-                        {"field": "avg_hours_business", "type": "quantitative", "title": "Promedio (h)"},
-                        {"field": "tickets", "type": "quantitative", "title": "Tickets"}
-                    ]
-                },
-                "config": vega_config_brand()
+            "data": items,
+            "chartType": "bar",
+            "metadata": {
+                "xField": "avg_hours_business",
+                "yField": "source",
+                "xType": "quantitative",
+                "yType": "ordinal",
+                "sortBy": sortBy,
+                "xTitle": "Horas hábiles (promedio)",
+                "yTitle": "Canal"
             }
         }
         return payload
@@ -1135,7 +938,7 @@ def slow_cases_business(
 ):
     """
     Casos más lentos por tiempo de resolución en horas hábiles (L–V, 07:00–17:00).
-    Siempre devuelve chartSpec (Vega-Lite) con {"$ref":"cases"}.
+    Frontend aplica template automáticamente.
     """
     try:
         from_dt = datetime.fromisoformat(from_date).date()
@@ -1217,8 +1020,12 @@ def slow_cases_business(
             "hours_business_resolution": float(r[6]) if r[6] is not None else 0.0
         } for r in rows]
 
-        # Altura dinámica (~26px por barra)
-        dyn_height = max(220, 26 * max(1, len(items)) + 60)
+        # Add combined label for display
+        items_with_label = [{
+            **item,
+            #"label": f"{item['hubspot_ticket_id']} — {item['subject'] or 'Sin asunto'}"
+            "label": f"{item['hubspot_ticket_id']}"
+        } for item in items]
 
         payload = {
             "success": True,
@@ -1226,47 +1033,18 @@ def slow_cases_business(
             "from": from_date,
             "to": to_date,
             "top": top,
-            "cases": items,
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Casos más lentos (horas hábiles)",
-                "data": {"values": {"$ref": "cases"}},
-                "transform": [
-                    {
-                        "calculate": "datum.hubspot_ticket_id + ' — ' + (isValid(datum.subject) && length(datum.subject) > 0 ? datum.subject : 'Sin asunto')",
-                        "as": "label"
-                    }
-                ],
-                "mark": {"type": "bar"},
-                "width": 760,
-                "height": dyn_height,
-                "encoding": {
-                    "x": {
-                        "field": "hours_business_resolution",
-                        "type": "quantitative",
-                        "axis": {"title": "Horas hábiles de resolución"},
-                        "scale": {"nice": True}
-                    },
-                    "y": {
-                        "field": "label",
-                        "type": "nominal",
-                        "sort": "-x",
-                        "axis": {"title": "Ticket — Asunto", "labelLimit": 560}
-                    },
-                    "color": {
-                        "field": "source",
-                        "type": "nominal",
-                        "legend": {"title": "Canal"}
-                    },
-                    "tooltip": [
-                        {"field": "hubspot_ticket_id", "type": "nominal", "title": "Ticket"},
-                        {"field": "subject",              "type": "nominal", "title": "Asunto"},
-                        {"field": "owner_name",           "type": "nominal", "title": "Agente"},
-                        {"field": "source",               "type": "nominal", "title": "Canal"},
-                        {"field": "hours_business_resolution", "type": "quantitative", "title": "Horas hábiles"}
-                    ]
-                },
-                "config": vega_config_brand()
+            # Template-based approach
+            "data": items_with_label,
+            "chartType": "bar",
+            "metadata": {
+                "xField": "hours_business_resolution",
+                "yField": "label",
+                "xType": "quantitative",
+                "yType": "nominal",
+                "sortBy": "-x",
+                "xTitle": "Horas hábiles de resolución",
+                "yTitle": "Ticket",
+                "labelLimit": 560
             }
         }
         return payload
