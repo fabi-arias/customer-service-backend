@@ -302,6 +302,7 @@ def tickets_by_source(
             rows = cur.fetchall()
 
         total = sum(r[1] for r in rows) or 1
+        # Add percentage to each item for tooltips
         items = [{"source": r[0], "count": r[1], "pct": round(r[1]*100/total, 1)} for r in rows]
 
         payload = {
@@ -310,18 +311,13 @@ def tickets_by_source(
             "from": from_date,
             "to": to_date,
             "total": total,
-            # Template-based approach
+            # Template-based approach - Pie chart for distribution
             "data": items,
-            "chartType": "bar",
+            "chartType": "pie",
             "metadata": {
-                "xField": "count",
                 "yField": "source",
-                "xType": "quantitative",
-                "yType": "nominal",
-                "sortBy": "-x",
-                "xTitle": "Tickets cerrados",
-                "yTitle": "Canal",
-                "labelLimit": 260
+                "valueField": "count",
+                "yTitle": "Canal"
             }
         }
         return payload
@@ -407,7 +403,9 @@ def closed_volume(
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Devuelve el total de tickets cerrados en el rango y el desglose diario.
+    Volumen de tickets cerrados en el rango.
+    - Si el rango es corto (<= 40 días): serie diaria.
+    - Si es largo: serie mensual.
     Frontend aplica template de línea automáticamente.
     """
     # --- Validación de fechas ---
@@ -420,64 +418,106 @@ def closed_volume(
     if from_dt > to_dt:
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
+    # --- Regla de granularidad ---
+    day_span = (to_dt - from_dt).days + 1
+    use_month = day_span > 40   # <= 40 días: diario; si no, mensual
+
     try:
         conn = get_db_connection()
         with conn, conn.cursor() as cur:
-            # Total de tickets cerrados
+            # Total cerrado (independiente de la granularidad)
             cur.execute("""
                 SELECT COUNT(*)::int AS total_closed
                 FROM resolved_tickets
                 WHERE closed_at >= %s::date
-                  AND closed_at < (%s::date + INTERVAL '1 day')
+                  AND closed_at <  (%s::date + INTERVAL '1 day')
             """, (from_dt, to_dt))
             total_closed = cur.fetchone()[0]
 
-            # Conteo por día real
-            cur.execute("""
-                SELECT 
-                    DATE(closed_at) AS date,
-                    COUNT(*)::int   AS count
-                FROM resolved_tickets
-                WHERE closed_at >= %s::date
-                  AND closed_at <  (%s::date + INTERVAL '1 day')
-                GROUP BY DATE(closed_at)
-            """, (from_dt, to_dt))
-            rows = cur.fetchall()  # [(date, count), ...]
-
-        # --- Completar días faltantes con 0 y ordenar ASC ---
-        counts = {str(d): c for (d, c) in rows}
-        by_day = []
-        d = from_dt
-        while d <= to_dt:
-            key = d.strftime("%Y-%m-%d")
-            by_day.append({"date": key, "count": int(counts.get(key, 0))})
-            d += timedelta(days=1)
-
-        # If single day (from == to), show as BigNumber instead of line chart
-        if from_dt == to_dt:
-            payload = {
-                "success": True,
-                "metric": "Tickets cerrados",
-                "from": from_date,
-                "to": to_date,
-                "total_closed": total_closed,
-                # chartSpec mínimo solo para que el parser lo detecte como big number
-                "chartSpec": {
-                    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                    "description": "Tickets cerrados (big number)",
-                    "mark": {"type": "text"}
+            # If single day (from == to), show as BigNumber
+            if from_dt == to_dt:
+                payload = {
+                    "success": True,
+                    "metric": "Tickets cerrados",
+                    "from": from_date,
+                    "to": to_date,
+                    "total_closed": total_closed,
+                    # chartSpec mínimo solo para que el parser lo detecte como big number
+                    "chartSpec": {
+                        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+                        "description": "Tickets cerrados (big number)",
+                        "mark": {"type": "text"}
+                    }
                 }
-            }
-        else:
+                return payload
+
+            if not use_month:
+                # ------- Serie DIARIA -------
+                cur.execute("""
+                    SELECT 
+                        DATE(closed_at) AS d,
+                        COUNT(*)::int   AS c
+                    FROM resolved_tickets
+                    WHERE closed_at >= %s::date
+                      AND closed_at <  (%s::date + INTERVAL '1 day')
+                    GROUP BY DATE(closed_at)
+                """, (from_dt, to_dt))
+                rows = cur.fetchall()
+
+                # Completar días faltantes con 0
+                counts = {str(d): c for (d, c) in rows}
+                series = []
+                d = from_dt
+                while d <= to_dt:
+                    key = d.strftime("%Y-%m-%d")
+                    series.append({"date": key, "count": int(counts.get(key, 0))})
+                    d += timedelta(days=1)
+
+            else:
+                # ------- Serie MENSUAL -------
+                cur.execute("""
+                    SELECT 
+                        date_trunc('month', closed_at)::date AS m,
+                        COUNT(*)::int AS c
+                    FROM resolved_tickets
+                    WHERE closed_at >= %s::date
+                      AND closed_at <  (%s::date + INTERVAL '1 day')
+                    GROUP BY 1
+                    ORDER BY 1
+                """, (from_dt, to_dt))
+                rows = cur.fetchall()
+
+                # Mapeo de números de mes a nombres en español
+                month_names = {
+                    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+                    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+                    9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+                }
+
+                # Completar meses faltantes con 0
+                counts = {str(d): c for (d, c) in rows}
+                series = []
+                d = from_dt.replace(day=1)  # Empezar desde el primer día del mes inicial
+                while d <= to_dt:
+                    key = d.strftime("%Y-%m-01")
+                    month_name = month_names[d.month]
+                    date_label = f"{month_name} {d.year}"
+                    series.append({"date": date_label, "count": int(counts.get(key, 0))})
+                    # Avanzar al siguiente mes
+                    if d.month == 12:
+                        d = d.replace(year=d.year + 1, month=1)
+                    else:
+                        d = d.replace(month=d.month + 1)
+
             # Multiple days: show as line chart
             payload = {
                 "success": True,
-                "metric": "Volumen de tickets cerrados",
+                "metric": f"Volumen de tickets cerrados ({'diario' if not use_month else 'mensual'})",
                 "from": from_date,
                 "to": to_date,
                 "total_closed": total_closed,
                 # Template-based line chart
-                "data": by_day,
+                "data": series,
                 "chartType": "line",
                 "metadata": {
                     "xField": "date",
@@ -488,7 +528,7 @@ def closed_volume(
                     "yTitle": "Tickets cerrados"
                 }
             }
-        return payload
+            return payload
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
