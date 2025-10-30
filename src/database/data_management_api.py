@@ -442,12 +442,7 @@ def closed_volume(
                     "from": from_date,
                     "to": to_date,
                     "total_closed": total_closed,
-                    # chartSpec mínimo solo para que el parser lo detecte como big number
-                    "chartSpec": {
-                        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                        "description": "Tickets cerrados (big number)",
-                        "mark": {"type": "text"}
-                    }
+                    "chartType": "bigNumber"
                 }
                 return payload
 
@@ -827,12 +822,7 @@ def avg_resolution_time_business(
             "to": to_date,
             "avg_hours_business": avg,
             "total_closed": total,
-            # chartSpec mínimo solo para que el parser lo detecte como big number
-            "chartSpec": {
-                "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
-                "description": "Promedio de horas hábiles (big number)",
-                "mark": {"type": "text"}
-            }
+            "chartType": "bigNumber"
         }
         return payload
 
