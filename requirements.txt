@@ -7,3 +7,5 @@ botocore
 requests
 psycopg2-binary
 pydantic
+python-jose[cryptography]
+python-multipart
