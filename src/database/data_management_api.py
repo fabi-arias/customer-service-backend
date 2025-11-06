@@ -13,6 +13,7 @@ from typing import List, Optional
 src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(src_path))
 from database.db_utils import get_db_connection
+from api.auth import require_role
 
 # Crear FastAPI app para gestión de datos
 data_app = FastAPI(
@@ -207,7 +208,8 @@ def top_categories(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
     top:       int = Query(10, description="Número de categorías a retornar"),
-    api_key:   str = Depends(verify_api_key)
+    api_key:   str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     """
     Devuelve las categorías más frecuentes de tickets resueltos en un rango de fechas.
@@ -273,7 +275,8 @@ def top_categories(
 def tickets_by_source(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
-    api_key:   str = Depends(verify_api_key)
+    api_key:   str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     """
     Distribución de tickets por canal (source). Frontend aplica template automáticamente.
@@ -331,7 +334,8 @@ def top_agents(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
     top:       int = Query(10, description="Número de agentes a retornar"),
-    api_key:   str = Depends(verify_api_key)
+    api_key:   str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     """
     Ranking de agentes por tickets cerrados en el rango.
@@ -400,7 +404,8 @@ def top_agents(
 def closed_volume(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date: str = Query(..., alias="to", description="YYYY-MM-DD"),
-    api_key: str = Depends(verify_api_key)
+    api_key: str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     """
     Volumen de tickets cerrados en el rango.
@@ -534,7 +539,8 @@ def tickets_by_subcategory(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
     top:       int | None = Query(None, description="Opcional: limitar a los N pares category/subcategory más frecuentes"),
-    api_key:   str = Depends(verify_api_key)
+    api_key:   str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     """
     Top de pares (categoría/subcategoría). Frontend aplica template automáticamente.
@@ -612,7 +618,8 @@ def avg_resolution_time_by_agent_business(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
     top:       Optional[int] = Query(None, description="Máximo de filas a devolver (orden asc por promedio). Si no se envía, devuelve todos."),
-    api_key:   str = Depends(verify_api_key)
+    api_key:   str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     try:
         from_dt = datetime.fromisoformat(from_date).date()
@@ -738,7 +745,8 @@ def avg_resolution_time_by_agent_business(
 def avg_resolution_time_business(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
-    api_key:   str = Depends(verify_api_key)
+    api_key:   str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     """
     Calcula el tiempo de resolución promedio por ticket en horas hábiles
@@ -835,7 +843,8 @@ def avg_resolution_time_by_source_business(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
     order:     str = Query("asc", description="asc = más rápidos primero; desc = más lentos primero"),
-    api_key:   str = Depends(verify_api_key)
+    api_key:   str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     """
     Promedio de tiempo de resolución por canal (source) en horas hábiles.
@@ -964,7 +973,8 @@ def slow_cases_business(
     from_date: str = Query(..., alias="from", description="YYYY-MM-DD"),
     to_date:   str = Query(..., alias="to",   description="YYYY-MM-DD"),
     top:       int = Query(10, description="Máximo de tickets a devolver"),
-    api_key:   str = Depends(verify_api_key)
+    api_key:   str = Depends(verify_api_key),
+    _=Depends(require_role(["Supervisor"]))
 ):
     """
     Casos más lentos por tiempo de resolución en horas hábiles (L–V, 07:00–17:00).

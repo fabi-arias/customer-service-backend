@@ -13,6 +13,9 @@ sys.path.insert(0, str(src_path))
 from services.bedrock_service import bedrock_service
 from database.db_utils import execute_query, test_connection
 from database.data_management_api import data_app
+from api.access_control import router as access_router
+from api.auth import require_role
+from fastapi import Depends
 
 app = FastAPI(
     title="Customer Service Chat API",
@@ -22,6 +25,9 @@ app = FastAPI(
 
 # Montar FastAPI de gestión de datos
 app.mount("/data", data_app)
+
+# Incluir router de control de acceso
+app.include_router(access_router)
 
 # Configurar CORS para el frontend
 app.add_middleware(
@@ -76,9 +82,10 @@ async def health_check():
     return {"status": "healthy", "service": "customer-service-chat-api"}
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, claims: dict = Depends(require_role(["Agent", "Supervisor"]))):
     """
     Endpoint principal para el chat con el agente de Bedrock.
+    Requiere autenticación como Agent o Supervisor.
     """
     try:
         response = bedrock_service.invoke_agent(
@@ -101,9 +108,10 @@ async def chat_endpoint(request: ChatRequest):
         )
 
 @app.get("/api/agent/info", response_model=AgentInfo)
-async def get_agent_info():
+async def get_agent_info(claims: dict = Depends(require_role(["Agent", "Supervisor"]))):
     """
     Obtiene información del agente de Bedrock configurado.
+    Requiere autenticación como Agent o Supervisor.
     """
     try:
         info = bedrock_service.get_agent_info()
@@ -115,9 +123,10 @@ async def get_agent_info():
         )
 
 @app.post("/api/agent/test-connection", response_model=ConnectionTest)
-async def test_agent_connection():
+async def test_agent_connection(claims: dict = Depends(require_role(["Agent", "Supervisor"]))):
     """
     Prueba la conexión con el agente de Bedrock.
+    Requiere autenticación como Agent o Supervisor.
     """
     try:
         result = bedrock_service.test_connection()
@@ -157,9 +166,10 @@ async def database_health():
         }
 
 @app.get("/api/database/stats")
-async def get_database_stats():
+async def get_database_stats(claims: dict = Depends(require_role(["Supervisor"]))):
     """
     Obtiene estadísticas básicas de la base de datos.
+    Requiere autenticación como Supervisor.
     """
     try:
         # Usar tu lógica actual de ingest_api.py
