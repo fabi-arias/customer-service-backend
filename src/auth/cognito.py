@@ -10,14 +10,14 @@ from jose import jwt
 from jose.utils import base64url_decode
 from fastapi import HTTPException, status, Request
 from functools import lru_cache
-import os
+from config.settings import cognito_config
 
-REGION = os.getenv("COGNITO_REGION", "us-east-1")
-USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID")
-CLIENT_ID = os.getenv("COGNITO_CLIENT_ID")
-CLIENT_SECRET = os.getenv("COGNITO_CLIENT_SECRET")  # opcional
-DOMAIN = os.getenv("COGNITO_DOMAIN")
-REDIRECT_URI = os.getenv("OAUTH_REDIRECT_URI")
+REGION = cognito_config.region
+USER_POOL_ID = cognito_config.user_pool_id
+CLIENT_ID = cognito_config.client_id
+CLIENT_SECRET = cognito_config.client_secret  # opcional
+DOMAIN = cognito_config.domain
+REDIRECT_URI = cognito_config.redirect_uri
 
 ISSUER = f"https://cognito-idp.{REGION}.amazonaws.com/{USER_POOL_ID}"
 JWKS_URL = f"{ISSUER}/.well-known/jwks.json"

@@ -6,14 +6,14 @@ Protegido con API key.
 """
 from fastapi import APIRouter, HTTPException, Query, Header
 from database.db_utils import get_db_connection
-import os
+from config.settings import appauth_config
 import logging
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
-API_KEY = os.getenv("INGEST_API_KEY")
+API_KEY = appauth_config.ingest_api_key
 
 
 @router.get("/allowlist/check")
