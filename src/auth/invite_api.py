@@ -1,5 +1,4 @@
 # src/auth/invite_api.py
-import os
 import secrets
 import datetime as dt
 from datetime import timezone
@@ -9,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
 from database.db_utils import get_db_connection
 from auth.deps import require_supervisor
+from config.secrets import get_secret
 import boto3
 import logging
 
@@ -16,16 +16,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-INVITE_EXP_DAYS = int(os.getenv("INVITE_EXP_DAYS", "7"))
-FRONTEND_ACCEPT_URL = os.getenv("FRONTEND_ACCEPT_URL", "http://localhost:3000/invite/accept")
+INVITE_EXP_DAYS = int(get_secret("INVITE_EXP_DAYS", "7") or "7")
+FRONTEND_ACCEPT_URL = get_secret("FRONTEND_ACCEPT_URL", "http://localhost:3000/invite/accept") or "http://localhost:3000/invite/accept"
 
 # n8n configuration
-N8N_MAIL_WEBHOOK_URL = os.getenv("N8N_MAIL_WEBHOOK_URL")
-N8N_MAIL_API_KEY = os.getenv("N8N_MAIL_API_KEY")  # opcional si luego agregas Auth en n8n
+N8N_MAIL_WEBHOOK_URL = get_secret("N8N_MAIL_WEBHOOK_URL")
+N8N_MAIL_API_KEY = get_secret("N8N_MAIL_API_KEY")  # opcional si luego agregas Auth en n8n
 
 # SES configuration (mantenido como fallback opcional)
-SES_REGION = os.getenv("SES_REGION", "us-east-1")
-SES_SENDER = os.getenv("SES_SENDER", "no-reply@musclepoints.com")
+SES_REGION = get_secret("SES_REGION", "us-east-1") or "us-east-1"
+SES_SENDER = get_secret("SES_SENDER", "no-reply@musclepoints.com") or "no-reply@musclepoints.com"
 
 
 class InviteBody(BaseModel):

@@ -5,7 +5,6 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import sys
 import json
-import os
 from pathlib import Path
 
 # Agregar el directorio src al path para imports
@@ -21,6 +20,8 @@ from auth.invite_api import router as invite_router
 from auth.accept_api import router as accept_router
 from auth.allowlist_check import router as allowlist_router
 from auth.users_api import router as users_router
+from config.secrets import get_secret
+from config.settings import cognito_config
 
 app = FastAPI(
     title="Customer Service Chat API",
@@ -41,9 +42,9 @@ app.add_middleware(
 )
 
 # Configuración de cookies
-COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN", "localhost")
-COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
-COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
+COOKIE_DOMAIN = get_secret("COOKIE_DOMAIN", "localhost") or "localhost"
+COOKIE_SECURE = (get_secret("COOKIE_SECURE", "false") or "false").lower() == "true"
+COOKIE_SAMESITE = get_secret("COOKIE_SAMESITE", "lax") or "lax"
 
 # =========================
 # Modelos Pydantic
@@ -291,13 +292,12 @@ async def auth_me(user=Depends(current_user)):
 async def auth_health():
     """
     Health check para el sistema de autenticación.
-    Verifica que las variables de entorno estén configuradas.
+    Verifica que las configuraciones de Cognito estén configuradas.
     """
-    import os
     checks = {
-        "cognito_configured": bool(os.getenv("COGNITO_USER_POOL_ID") and os.getenv("COGNITO_CLIENT_ID")),
-        "domain_configured": bool(os.getenv("COGNITO_DOMAIN")),
-        "redirect_uri_configured": bool(os.getenv("OAUTH_REDIRECT_URI")),
+        "cognito_configured": bool(cognito_config.user_pool_id and cognito_config.client_id),
+        "domain_configured": bool(cognito_config.domain),
+        "redirect_uri_configured": bool(cognito_config.redirect_uri),
     }
     all_ok = all(checks.values())
     return {

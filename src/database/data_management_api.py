@@ -2,7 +2,6 @@
 from fastapi import FastAPI, HTTPException, Depends, Header, Query
 from fastapi.responses import StreamingResponse
 import json
-import os
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -13,6 +12,7 @@ from typing import List, Optional
 src_path = Path(__file__).parent.parent
 sys.path.insert(0, str(src_path))
 from database.db_utils import get_db_connection
+from config.settings import appauth_config
 
 # Crear FastAPI app para gestión de datos
 data_app = FastAPI(
@@ -23,7 +23,7 @@ data_app = FastAPI(
 
 # Función de autenticación
 def verify_api_key(x_api_key: str = Header(None)):
-    api_key = os.getenv("INGEST_API_KEY")
+    api_key = appauth_config.ingest_api_key
     if not api_key:
         raise HTTPException(status_code=500, detail="API key not configured")
     if x_api_key != api_key:
