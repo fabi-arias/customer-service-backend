@@ -20,6 +20,7 @@ from auth.deps import current_user, require_agent, require_supervisor
 from auth.invite_api import router as invite_router
 from auth.accept_api import router as accept_router
 from auth.allowlist_check import router as allowlist_router
+from auth.users_api import router as users_router
 
 app = FastAPI(
     title="Customer Service Chat API",
@@ -263,8 +264,21 @@ async def auth_exchange(code: str = Form(...)):
 
 @app.post("/auth/logout")
 async def auth_logout():
+    """
+    Cierra sesión completamente:
+    1. Elimina la cookie id_token del backend
+    2. El frontend redirige a Cognito /logout para cerrar sesión de Cognito
+    """
     response = Response(content=json.dumps({"ok": True}), media_type="application/json")
-    response.delete_cookie("id_token", path="/")
+    # Eliminar cookie con los mismos parámetros que se usaron para establecerla
+    response.delete_cookie(
+        key="id_token",
+        path="/",
+        domain=None if COOKIE_DOMAIN == "localhost" else COOKIE_DOMAIN,
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
+        httponly=True,
+    )
     return response
 
 
@@ -306,6 +320,7 @@ async def secure_supervisor(_=Depends(require_supervisor)):
 app.include_router(invite_router)
 app.include_router(accept_router)
 app.include_router(allowlist_router)
+app.include_router(users_router)
 
 if __name__ == "__main__":
     import uvicorn

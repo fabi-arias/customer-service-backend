@@ -59,8 +59,12 @@ def require_agent(user = Depends(current_user)):
     return user
 
 def require_supervisor(user = Depends(current_user)):
+    """
+    Requiere que el usuario tenga grupo 'Supervisor' en Cognito.
+    No verifica el rol en la base de datos, solo el grupo de Cognito.
+    """
     if "Supervisor" not in set(user["groups"]):
         raise HTTPException(status_code=403, detail="Supervisor role required")
-    # allowlist con rol
-    _check_allowlist(user["email"], expected_role="Supervisor")
+    # No verificamos el rol en DB porque el grupo de Cognito es la fuente de verdad
+    # El rol en DB puede ser diferente (ej: usuario invitado como Agent pero promovido a Supervisor en Cognito)
     return user
