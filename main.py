@@ -1,9 +1,11 @@
 # main.py - FastAPI Backend
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response, Request, Depends, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import sys
+import json
+import os
 from pathlib import Path
 
 # Agregar el directorio src al path para imports
@@ -13,6 +15,12 @@ sys.path.insert(0, str(src_path))
 from services.bedrock_service import bedrock_service
 from database.db_utils import execute_query, test_connection
 from database.data_management_api import data_app
+from auth.cognito import exchange_code_for_tokens, verify_id_token
+from auth.deps import current_user, require_agent, require_supervisor
+from auth.invite_api import router as invite_router
+from auth.accept_api import router as accept_router
+from auth.allowlist_check import router as allowlist_router
+from auth.users_api import router as users_router
 
 app = FastAPI(
     title="Customer Service Chat API",
@@ -31,6 +39,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configuración de cookies
+COOKIE_DOMAIN = os.getenv("COOKIE_DOMAIN", "localhost")
+COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 # =========================
 # Modelos Pydantic
@@ -201,6 +214,113 @@ async def get_database_stats():
             status_code=500,
             detail=f"Error al obtener estadísticas: {str(e)}"
         )
+
+# =========================
+# Auth Endpoints
+# =========================
+@app.post("/auth/exchange")
+async def auth_exchange(code: str = Form(...)):
+    """
+    Intercambia el 'code' por tokens con Cognito. Devuelve cookie HttpOnly.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        logger.info(f"Intercambiando código por tokens...")
+        tokens = exchange_code_for_tokens(code)
+        id_token = tokens.get("id_token")
+        if not id_token:
+            logger.error("No id_token returned from Cognito")
+            raise HTTPException(status_code=401, detail="No id_token returned")
+
+        # Validar inmediatamente (falla temprano)
+        logger.info("Validando id_token...")
+        claims = verify_id_token(id_token)
+        email = (claims.get("email") or "").lower()
+        logger.info(f"Token validado para email: {email}")
+
+        resp = {"ok": True, "email": email}
+        response = Response(content=json.dumps(resp), media_type="application/json")
+        # Cookie HttpOnly
+        response.set_cookie(
+            key="id_token",
+            value=id_token,
+            httponly=True,
+            secure=COOKIE_SECURE,
+            samesite=COOKIE_SAMESITE,  # "lax" en local
+            domain=None if COOKIE_DOMAIN == "localhost" else COOKIE_DOMAIN,
+            max_age=3600,  # 1h
+            path="/",
+        )
+        logger.info(f"Sesión iniciada exitosamente para {email}")
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error en auth_exchange: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+
+@app.post("/auth/logout")
+async def auth_logout():
+    """
+    Cierra sesión completamente:
+    1. Elimina la cookie id_token del backend
+    2. El frontend redirige a Cognito /logout para cerrar sesión de Cognito
+    """
+    response = Response(content=json.dumps({"ok": True}), media_type="application/json")
+    # Eliminar cookie con los mismos parámetros que se usaron para establecerla
+    response.delete_cookie(
+        key="id_token",
+        path="/",
+        domain=None if COOKIE_DOMAIN == "localhost" else COOKIE_DOMAIN,
+        samesite=COOKIE_SAMESITE,
+        secure=COOKIE_SECURE,
+        httponly=True,
+    )
+    return response
+
+
+@app.get("/auth/me")
+async def auth_me(user=Depends(current_user)):
+    return {"email": user["email"], "groups": user["groups"]}
+
+
+@app.get("/auth/health")
+async def auth_health():
+    """
+    Health check para el sistema de autenticación.
+    Verifica que las variables de entorno estén configuradas.
+    """
+    import os
+    checks = {
+        "cognito_configured": bool(os.getenv("COGNITO_USER_POOL_ID") and os.getenv("COGNITO_CLIENT_ID")),
+        "domain_configured": bool(os.getenv("COGNITO_DOMAIN")),
+        "redirect_uri_configured": bool(os.getenv("OAUTH_REDIRECT_URI")),
+    }
+    all_ok = all(checks.values())
+    return {
+        "status": "healthy" if all_ok else "misconfigured",
+        "checks": checks
+    }
+
+
+# Ejemplos protegidos
+@app.get("/secure/agent")
+async def secure_agent(_=Depends(require_agent)):
+    return {"ok": True, "scope": "agent"}
+
+
+@app.get("/secure/supervisor")
+async def secure_supervisor(_=Depends(require_supervisor)):
+    return {"ok": True, "scope": "supervisor"}
+
+# Registrar routers de invitación
+app.include_router(invite_router)
+app.include_router(accept_router)
+app.include_router(allowlist_router)
+app.include_router(users_router)
 
 if __name__ == "__main__":
     import uvicorn

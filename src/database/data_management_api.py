@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 
@@ -158,7 +158,8 @@ def export_resolved_tickets(
         except Exception:
             raise HTTPException(status_code=400, detail="since inválido")
     else:
-        since_date = datetime.utcnow() - timedelta(days=30)
+        # ✅ usar datetime aware para comparar con TIMESTAMPTZ
+        since_date = datetime.now(timezone.utc) - timedelta(days=30)
 
     def row_to_doc(row):
         (hubspot_ticket_id, subject, content, created_at, closed_at,
