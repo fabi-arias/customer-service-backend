@@ -68,8 +68,8 @@ def list_users(me=Depends(current_user)):
                 "count": len(users)
             }
     except Exception as e:
-        logger.error(f"Error listando usuarios: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error al listar usuarios: {str(e)}")
+        logger.error("Error listando usuarios", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al listar usuarios") from None
 
 
 @router.patch("/users/{email}/role")
@@ -115,8 +115,8 @@ def update_user_role(email: str, body: UpdateRoleBody, me=Depends(current_user))
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error actualizando rol: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error al actualizar rol: {str(e)}")
+        logger.error("Error actualizando rol", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al actualizar rol") from None
 
 
 @router.patch("/users/{email}/status")
@@ -177,6 +177,6 @@ def update_user_status(email: str, body: UpdateStatusBody, me=Depends(current_us
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error actualizando estado: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error al actualizar estado: {str(e)}")
+        logger.error("Error actualizando estado", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al actualizar estado") from None
 

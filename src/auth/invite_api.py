@@ -201,8 +201,8 @@ def invite_user(body: InviteBody, me=Depends(current_user)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creando invitación: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error al crear invitación: {str(e)}")
+        logger.error("Error creando invitación", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al crear invitación") from None
     
     invite_url = f"{FRONTEND_ACCEPT_URL}?token={token}"
     

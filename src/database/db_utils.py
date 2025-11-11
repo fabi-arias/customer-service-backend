@@ -7,6 +7,7 @@ import psycopg2
 import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
+from contextlib import closing
 
 # imports del proyecto
 src_path = Path(__file__).parent.parent
@@ -32,41 +33,38 @@ def get_db_connection():
 def execute_query(query: str, params: Optional[tuple] = None) -> Dict[str, Any]:
     """
     Ejecuta una consulta SQL y retorna el resultado.
-    
-    Args:
-        query: Consulta SQL a ejecutar
-        params: Parámetros para la consulta (opcional)
-        
-    Returns:
-        Dict con el resultado de la consulta
+    Detecta result sets usando cur.description (DB-API 2.0), no por el texto de la query.
     """
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            cur.execute(query, params)
-            
-            # Si es una consulta SELECT, retornar los resultados
-            if query.strip().upper().startswith('SELECT'):
-                columns = [desc[0] for desc in cur.description]
-                rows = cur.fetchall()
-                return {
-                    "success": True,
-                    "columns": columns,
-                    "rows": rows,
-                    "count": len(rows)
-                }
-            else:
-                # Para INSERT, UPDATE, DELETE
-                return {
-                    "success": True,
-                    "affected_rows": cur.rowcount
-                }
-                
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                cur.execute(query, params)
+
+                # ¿La consulta devolvió columnas? Entonces hay result set.
+                if cur.description:
+                    columns = [desc[0] for desc in cur.description]
+                    rows = cur.fetchall()
+                    return {
+                        "success": True,
+                        "columns": columns,
+                        "rows": rows,
+                        "count": len(rows),
+                    }
+                else:
+                    # Para INSERT, UPDATE, DELETE u operaciones sin result set
+                    return {
+                        "success": True,
+                        "affected_rows": cur.rowcount,
+                    }
+
     except Exception as e:
+        # Nota: esta función es de utilería. Evita exponer 'error' directamente en HTTP.
+        # La capa API debe registrar el stacktrace y responder con mensaje neutro.
         return {
             "success": False,
-            "error": str(e)
+            "error": str(e),
         }
+
 
 def test_connection() -> bool:
     """
@@ -76,11 +74,11 @@ def test_connection() -> bool:
         bool: True si la conexión es exitosa, False en caso contrario
     """
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            cur.execute("SELECT 1")
-            result = cur.fetchone()
-            return result[0] == 1
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                result = cur.fetchone()
+                return result[0] == 1
     except Exception as e:
         print(f"❌ Error de conexión a la base de datos: {e}")
         return False

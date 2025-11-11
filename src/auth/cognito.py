@@ -11,6 +11,9 @@ from jose.utils import base64url_decode
 from fastapi import HTTPException, status, Request
 from functools import lru_cache
 from config.settings import cognito_config
+import logging
+
+logger = logging.getLogger(__name__)
 
 REGION = cognito_config.region
 USER_POOL_ID = cognito_config.user_pool_id
@@ -38,6 +41,22 @@ def _get_key(kid: str) -> Dict[str, Any]:
     for k in jwks.get("keys", []):
         if k.get("kid") == kid:
             return k
+
+    # 🔁 JWKS may have rotated on Cognito; try refreshing cache once.
+    logger.warning(f"JWKS key {kid} not found — refreshing JWKS cache")
+    _fetch_jwks.cache_clear()
+
+    try:
+        jwks = _fetch_jwks()
+    except Exception as e:
+        logger.error("Failed to refresh JWKS", exc_info=True)
+        raise HTTPException(status_code=502, detail="Error fetching JWKS from Cognito") from None
+
+    for k in jwks.get("keys", []):
+        if k.get("kid") == kid:
+            return k
+
+    # If still not found, return 401 — key may truly be invalid.
     raise HTTPException(status_code=401, detail="JWKS key not found")
 
 

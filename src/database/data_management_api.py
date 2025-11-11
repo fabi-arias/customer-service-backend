@@ -6,7 +6,10 @@ import sys
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+import logging
+from contextlib import closing
 
+logger = logging.getLogger(__name__)
 
 # imports del proyecto
 src_path = Path(__file__).parent.parent
@@ -36,33 +39,36 @@ def health():
     return {"status": "ok", "service": "data-management-api"}
 
 @data_app.get("/stats")
-def get_stats():
-    """Obtiene estadísticas básicas de tickets en la base de datos."""
+def get_stats(api_key: str = Depends(verify_api_key)):
+    """Obtiene estadísticas básicas de tickets en la base de datos (requiere API key)."""
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            # Contar total de tickets
-            cur.execute("SELECT COUNT(*) FROM resolved_tickets")
-            total_tickets = cur.fetchone()[0]
-            
-            # Contar por categoría
-            cur.execute("""
-                SELECT category, COUNT(*) as count 
-                FROM resolved_tickets 
-                WHERE category IS NOT NULL 
-                GROUP BY category 
-                ORDER BY count DESC
-            """)
-            categories = cur.fetchall()
-            
-            return {
-                "success": True,
-                "total_tickets": total_tickets,
-                "categories": [{"category": cat[0], "count": cat[1]} for cat in categories]
-            }
-            
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                # Contar total de tickets
+                cur.execute("SELECT COUNT(*) FROM resolved_tickets")
+                total_tickets = cur.fetchone()[0]
+
+                # Contar por categoría
+                cur.execute("""
+                    SELECT category, COUNT(*) as count 
+                    FROM resolved_tickets 
+                    WHERE category IS NOT NULL 
+                    GROUP BY category 
+                    ORDER BY count DESC
+                """)
+                categories = cur.fetchall()
+
+                return {
+                    "success": True,
+                    "total_tickets": total_tickets,
+                    "categories": [{"category": cat[0], "count": cat[1]} for cat in categories]
+                }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error obteniendo estadísticas", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al obtener estadísticas") from None
+
+
 
 @data_app.post("/tickets/batch")
 def ingest_batch(
@@ -76,68 +82,68 @@ def ingest_batch(
     inserted, skipped, errors = 0, 0, []
     
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            for i, ticket in enumerate(tickets):
-                try:
-                    # Validar campos requeridos
-                    if not ticket.get("hubspot_ticket_id"):
-                        errors.append(f"Ticket {i}: hubspot_ticket_id es requerido")
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                for i, ticket in enumerate(tickets):
+                    try:
+                        # Validar campos requeridos
+                        if not ticket.get("hubspot_ticket_id"):
+                            errors.append(f"Ticket {i}: hubspot_ticket_id es requerido")
+                            skipped += 1
+                            continue
+
+                        cur.execute("""
+                            INSERT INTO resolved_tickets (
+                              hubspot_ticket_id,
+                              subject,
+                              content,
+                              created_at,
+                              closed_at,
+                              itinerary_number,
+                              source,
+                              category,
+                              subcategory,
+                              resolution,
+                              owner_id,          -- NUEVO
+                              owner_name,        -- NUEVO
+                              case_key,
+                              raw_hubspot
+                            )
+                            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
+                            ON CONFLICT (hubspot_ticket_id) DO NOTHING
+                        """, (
+                            ticket["hubspot_ticket_id"],
+                            ticket.get("subject"),
+                            ticket.get("content"),
+                            ticket.get("created_at"),
+                            ticket.get("closed_at"),
+                            ticket.get("itinerary_number", "N/A"),
+                            ticket.get("source", "Email"),
+                            ticket.get("category", "Consulta General"),
+                            ticket.get("subcategory", "Consulta"),
+                            ticket.get("resolution"),
+                            ticket.get("owner_id"),          # <-- nuevo
+                            ticket.get("owner_name"),        # <-- nuevo
+                            ticket.get("case_key"),
+                            json.dumps(ticket.get("raw_hubspot", {})),
+                        ))
+                        inserted += cur.rowcount  # 1 insertado, 0 duplicado
+
+                    except Exception as e:
                         skipped += 1
-                        continue
+                        error_msg = f"Ticket {ticket.get('hubspot_ticket_id', f'#{i}')}: {str(e)}"
+                        errors.append(error_msg)
+                        print(f"❌ {error_msg}")
 
-                    cur.execute("""
-                        INSERT INTO resolved_tickets (
-                          hubspot_ticket_id,
-                          subject,
-                          content,
-                          created_at,
-                          closed_at,
-                          itinerary_number,
-                          source,
-                          category,
-                          subcategory,
-                          resolution,
-                          owner_id,          -- NUEVO
-                          owner_name,        -- NUEVO
-                          case_key,
-                          raw_hubspot
-                        )
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)
-                        ON CONFLICT (hubspot_ticket_id) DO NOTHING
-                    """, (
-                        ticket["hubspot_ticket_id"],
-                        ticket.get("subject"),
-                        ticket.get("content"),
-                        ticket.get("created_at"),
-                        ticket.get("closed_at"),
-                        ticket.get("itinerary_number", "N/A"),
-                        ticket.get("source", "Email"),
-                        ticket.get("category", "Consulta General"),
-                        ticket.get("subcategory", "Consulta"),
-                        ticket.get("resolution"),
-                        ticket.get("owner_id"),          # <-- nuevo
-                        ticket.get("owner_name"),        # <-- nuevo
-                        ticket.get("case_key"),
-                        json.dumps(ticket.get("raw_hubspot", {})),
-                    ))
-                    inserted += cur.rowcount  # 1 insertado, 0 duplicado
-
-                except Exception as e:
-                    skipped += 1
-                    error_msg = f"Ticket {ticket.get('hubspot_ticket_id', f'#{i}')}: {str(e)}"
-                    errors.append(error_msg)
-                    print(f"❌ {error_msg}")
-
-        response = {
-            "success": True,
-            "inserted": inserted,
-            "skipped": skipped,
-            "total_processed": len(tickets)
-        }
-        if errors:
-            response["errors"] = errors
-        return response
+            response = {
+                "success": True,
+                "inserted": inserted,
+                "skipped": skipped,
+                "total_processed": len(tickets)
+            }
+            if errors:
+                response["errors"] = errors
+            return response
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error de conexión: {str(e)}")
@@ -184,18 +190,18 @@ def export_resolved_tickets(
 
     def generate_ndjson():
         try:
-            conn = get_db_connection()
-            with conn, conn.cursor() as cur:
-                cur.execute("""
-                    SELECT hubspot_ticket_id, subject, content, created_at, closed_at,
-                           itinerary_number, source, category, subcategory, resolution, case_key, owner_id, owner_name
-                    FROM resolved_tickets
-                    WHERE closed_at >= %s
-                    ORDER BY closed_at DESC
-                    LIMIT %s
-                """, (since_date, limit))
-                for r in cur.fetchall():
-                    yield json.dumps(row_to_doc(r), ensure_ascii=False) + "\n"
+            with closing(get_db_connection()) as conn:
+                with conn, conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT hubspot_ticket_id, subject, content, created_at, closed_at,
+                               itinerary_number, source, category, subcategory, resolution, case_key, owner_id, owner_name
+                        FROM resolved_tickets
+                        WHERE closed_at >= %s
+                        ORDER BY closed_at DESC
+                        LIMIT %s
+                    """, (since_date, limit))
+                    for r in cur.fetchall():
+                        yield json.dumps(row_to_doc(r), ensure_ascii=False) + "\n"
         except Exception as e:
             # Devuelve un documento de error y corta
             yield json.dumps({"error": str(e)}) + "\n"
@@ -224,21 +230,21 @@ def top_categories(
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            # Rango FIN EXCLUSIVO: closed_at >= from AND closed_at < (to + 1 día)
-            cur.execute("""
-                SELECT
-                    COALESCE(NULLIF(TRIM(category), ''), 'Sin categoría') AS category,
-                    COUNT(*)::int AS count
-                FROM resolved_tickets
-                WHERE closed_at >= %s::date
-                  AND closed_at <  (%s::date + INTERVAL '1 day')
-                GROUP BY 1
-                ORDER BY count DESC
-                LIMIT %s
-            """, (from_dt, to_dt, top))
-            rows = cur.fetchall()
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                # Rango FIN EXCLUSIVO: closed_at >= from AND closed_at < (to + 1 día)
+                cur.execute("""
+                    SELECT
+                        COALESCE(NULLIF(TRIM(category), ''), 'Sin categoría') AS category,
+                        COUNT(*)::int AS count
+                    FROM resolved_tickets
+                    WHERE closed_at >= %s::date
+                      AND closed_at <  (%s::date + INTERVAL '1 day')
+                    GROUP BY 1
+                    ORDER BY count DESC
+                    LIMIT %s
+                """, (from_dt, to_dt, top))
+                rows = cur.fetchall()
 
         items = [{"category": r[0], "count": r[1]} for r in rows]
         total = sum(it["count"] for it in items)
@@ -288,19 +294,19 @@ def tickets_by_source(
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            cur.execute("""
-                SELECT
-                    COALESCE(NULLIF(TRIM(source), ''), 'Desconocido') AS source,
-                    COUNT(*)::int AS count
-                FROM resolved_tickets
-                WHERE closed_at >= %s::date
-                  AND closed_at <  (%s::date + INTERVAL '1 day')
-                GROUP BY 1
-                ORDER BY count DESC
-            """, (from_dt, to_dt))
-            rows = cur.fetchall()
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        COALESCE(NULLIF(TRIM(source), ''), 'Desconocido') AS source,
+                        COUNT(*)::int AS count
+                    FROM resolved_tickets
+                    WHERE closed_at >= %s::date
+                      AND closed_at <  (%s::date + INTERVAL '1 day')
+                    GROUP BY 1
+                    ORDER BY count DESC
+                """, (from_dt, to_dt))
+                rows = cur.fetchall()
 
         total = sum(r[1] for r in rows) or 1
         # Add percentage to each item for tooltips
@@ -348,24 +354,24 @@ def top_agents(
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            cur.execute("""
-                SELECT
-                    COALESCE(
-                        NULLIF(TRIM(owner_name), ''),
-                        NULLIF(TRIM(owner_id), ''),
-                        'Sin asignar'
-                    ) AS agent,
-                    COUNT(*)::int AS count
-                FROM resolved_tickets
-                WHERE closed_at >= %s::date
-                  AND closed_at <  (%s::date + INTERVAL '1 day')
-                GROUP BY 1
-                ORDER BY count DESC, agent ASC
-                LIMIT %s
-            """, (from_dt, to_dt, top))
-            rows = cur.fetchall()
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                cur.execute("""
+                    SELECT
+                        COALESCE(
+                            NULLIF(TRIM(owner_name), ''),
+                            NULLIF(TRIM(owner_id), ''),
+                            'Sin asignar'
+                        ) AS agent,
+                        COUNT(*)::int AS count
+                    FROM resolved_tickets
+                    WHERE closed_at >= %s::date
+                      AND closed_at <  (%s::date + INTERVAL '1 day')
+                    GROUP BY 1
+                    ORDER BY count DESC, agent ASC
+                    LIMIT %s
+                """, (from_dt, to_dt, top))
+                rows = cur.fetchall()
 
         items = [{"agent": r[0], "count": r[1]} for r in rows]
         total = sum(it["count"] for it in items)
@@ -424,107 +430,107 @@ def closed_volume(
     use_month = day_span > 40   # <= 40 días: diario; si no, mensual
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            # Total cerrado (independiente de la granularidad)
-            cur.execute("""
-                SELECT COUNT(*)::int AS total_closed
-                FROM resolved_tickets
-                WHERE closed_at >= %s::date
-                  AND closed_at <  (%s::date + INTERVAL '1 day')
-            """, (from_dt, to_dt))
-            total_closed = cur.fetchone()[0]
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                # Total cerrado (independiente de la granularidad)
+                cur.execute("""
+                    SELECT COUNT(*)::int AS total_closed
+                    FROM resolved_tickets
+                    WHERE closed_at >= %s::date
+                      AND closed_at <  (%s::date + INTERVAL '1 day')
+                """, (from_dt, to_dt))
+                total_closed = cur.fetchone()[0]
 
-            # If single day (from == to), show as BigNumber
-            if from_dt == to_dt:
+                # If single day (from == to), show as BigNumber
+                if from_dt == to_dt:
+                    payload = {
+                        "success": True,
+                        "metric": "Tickets cerrados",
+                        "from": from_date,
+                        "to": to_date,
+                        "total_closed": total_closed,
+                        "chartType": "bigNumber"
+                    }
+                    return payload
+
+                if not use_month:
+                    # ------- Serie DIARIA -------
+                    cur.execute("""
+                        SELECT 
+                            DATE(closed_at) AS d,
+                            COUNT(*)::int   AS c
+                        FROM resolved_tickets
+                        WHERE closed_at >= %s::date
+                          AND closed_at <  (%s::date + INTERVAL '1 day')
+                        GROUP BY DATE(closed_at)
+                    """, (from_dt, to_dt))
+                    rows = cur.fetchall()
+
+                    # Completar días faltantes con 0
+                    counts = {str(d): c for (d, c) in rows}
+                    series = []
+                    d = from_dt
+                    while d <= to_dt:
+                        key = d.strftime("%Y-%m-%d")
+                        series.append({"date": key, "count": int(counts.get(key, 0))})
+                        d += timedelta(days=1)
+
+                else:
+                    # ------- Serie MENSUAL -------
+                    cur.execute("""
+                        SELECT 
+                            date_trunc('month', closed_at)::date AS m,
+                            COUNT(*)::int AS c
+                        FROM resolved_tickets
+                        WHERE closed_at >= %s::date
+                          AND closed_at <  (%s::date + INTERVAL '1 day')
+                        GROUP BY 1
+                        ORDER BY 1
+                    """, (from_dt, to_dt))
+                    rows = cur.fetchall()
+
+                    # Mapeo de números de mes a nombres en español
+                    month_names = {
+                        1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
+                        5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
+                        9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+                    }
+
+                    # Completar meses faltantes con 0
+                    counts = {str(d): c for (d, c) in rows}
+                    series = []
+                    d = from_dt.replace(day=1)  # Empezar desde el primer día del mes inicial
+                    while d <= to_dt:
+                        key = d.strftime("%Y-%m-01")
+                        month_name = month_names[d.month]
+                        date_label = f"{month_name} {d.year}"
+                        series.append({"date": date_label, "count": int(counts.get(key, 0))})
+                        # Avanzar al siguiente mes
+                        if d.month == 12:
+                            d = d.replace(year=d.year + 1, month=1)
+                        else:
+                            d = d.replace(month=d.month + 1)
+
+                # Multiple days: show as line chart
                 payload = {
                     "success": True,
-                    "metric": "Tickets cerrados",
+                    "metric": f"Volumen de tickets cerrados ({'diario' if not use_month else 'mensual'})",
                     "from": from_date,
                     "to": to_date,
                     "total_closed": total_closed,
-                    "chartType": "bigNumber"
+                    # Template-based line chart
+                    "data": series,
+                    "chartType": "line",
+                    "metadata": {
+                        "xField": "date",
+                        "yField": "count",
+                        "xType": "ordinal",
+                        "yType": "quantitative",
+                        "xTitle": "Fecha",
+                        "yTitle": "Tickets cerrados"
+                    }
                 }
                 return payload
-
-            if not use_month:
-                # ------- Serie DIARIA -------
-                cur.execute("""
-                    SELECT 
-                        DATE(closed_at) AS d,
-                        COUNT(*)::int   AS c
-                    FROM resolved_tickets
-                    WHERE closed_at >= %s::date
-                      AND closed_at <  (%s::date + INTERVAL '1 day')
-                    GROUP BY DATE(closed_at)
-                """, (from_dt, to_dt))
-                rows = cur.fetchall()
-
-                # Completar días faltantes con 0
-                counts = {str(d): c for (d, c) in rows}
-                series = []
-                d = from_dt
-                while d <= to_dt:
-                    key = d.strftime("%Y-%m-%d")
-                    series.append({"date": key, "count": int(counts.get(key, 0))})
-                    d += timedelta(days=1)
-
-            else:
-                # ------- Serie MENSUAL -------
-                cur.execute("""
-                    SELECT 
-                        date_trunc('month', closed_at)::date AS m,
-                        COUNT(*)::int AS c
-                    FROM resolved_tickets
-                    WHERE closed_at >= %s::date
-                      AND closed_at <  (%s::date + INTERVAL '1 day')
-                    GROUP BY 1
-                    ORDER BY 1
-                """, (from_dt, to_dt))
-                rows = cur.fetchall()
-
-                # Mapeo de números de mes a nombres en español
-                month_names = {
-                    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril",
-                    5: "Mayo", 6: "Junio", 7: "Julio", 8: "Agosto",
-                    9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
-                }
-
-                # Completar meses faltantes con 0
-                counts = {str(d): c for (d, c) in rows}
-                series = []
-                d = from_dt.replace(day=1)  # Empezar desde el primer día del mes inicial
-                while d <= to_dt:
-                    key = d.strftime("%Y-%m-01")
-                    month_name = month_names[d.month]
-                    date_label = f"{month_name} {d.year}"
-                    series.append({"date": date_label, "count": int(counts.get(key, 0))})
-                    # Avanzar al siguiente mes
-                    if d.month == 12:
-                        d = d.replace(year=d.year + 1, month=1)
-                    else:
-                        d = d.replace(month=d.month + 1)
-
-            # Multiple days: show as line chart
-            payload = {
-                "success": True,
-                "metric": f"Volumen de tickets cerrados ({'diario' if not use_month else 'mensual'})",
-                "from": from_date,
-                "to": to_date,
-                "total_closed": total_closed,
-                # Template-based line chart
-                "data": series,
-                "chartType": "line",
-                "metadata": {
-                    "xField": "date",
-                    "yField": "count",
-                    "xType": "ordinal",
-                    "yType": "quantitative",
-                    "xTitle": "Fecha",
-                    "yTitle": "Tickets cerrados"
-                }
-            }
-            return payload
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -550,25 +556,25 @@ def tickets_by_subcategory(
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            sql = """
-                SELECT
-                  COALESCE(NULLIF(TRIM(category), ''), 'Sin categoría')       AS category,
-                  COALESCE(NULLIF(TRIM(subcategory), ''), 'Sin subcategoría') AS subcategory,
-                  COUNT(*)::int AS count
-                FROM resolved_tickets
-                WHERE closed_at >= %s::date
-                  AND closed_at <  (%s::date + INTERVAL '1 day')
-                GROUP BY 1,2
-                ORDER BY count DESC, category ASC, subcategory ASC
-            """
-            if top and isinstance(top, int) and top > 0:
-                sql += " LIMIT %s"
-                cur.execute(sql, (from_dt, to_dt, top))
-            else:
-                cur.execute(sql, (from_dt, to_dt))
-            rows = cur.fetchall()
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                sql = """
+                    SELECT
+                      COALESCE(NULLIF(TRIM(category), ''), 'Sin categoría')       AS category,
+                      COALESCE(NULLIF(TRIM(subcategory), ''), 'Sin subcategoría') AS subcategory,
+                      COUNT(*)::int AS count
+                    FROM resolved_tickets
+                    WHERE closed_at >= %s::date
+                      AND closed_at <  (%s::date + INTERVAL '1 day')
+                    GROUP BY 1,2
+                    ORDER BY count DESC, category ASC, subcategory ASC
+                """
+                if top and isinstance(top, int) and top > 0:
+                    sql += " LIMIT %s"
+                    cur.execute(sql, (from_dt, to_dt, top))
+                else:
+                    cur.execute(sql, (from_dt, to_dt))
+                rows = cur.fetchall()
 
         items = [{"category": r[0], "subcategory": r[1], "count": r[2]} for r in rows]
         total = sum(it["count"] for it in items)
@@ -624,9 +630,9 @@ def avg_resolution_time_by_agent_business(
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            base_sql = """
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                base_sql = """
                 WITH parametros AS (
                   SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
                 ),
@@ -693,22 +699,22 @@ def avg_resolution_time_by_agent_business(
                 SELECT owner_name, total_tickets_cerrados, promedio_horas
                 FROM por_agente
                 ORDER BY promedio_horas ASC, total_tickets_cerrados DESC, owner_name ASC
-            """
-            params = [from_dt, to_dt]
-            if top is not None:
-                sql = base_sql + " LIMIT %s"
-                params.append(top)
-            else:
-                sql = base_sql
+                """
+                params = [from_dt, to_dt]
+                if top is not None:
+                    sql = base_sql + " LIMIT %s"
+                    params.append(top)
+                else:
+                    sql = base_sql
 
-            cur.execute(sql, tuple(params))
-            rows = cur.fetchall()
+                cur.execute(sql, tuple(params))
+                rows = cur.fetchall()
 
-            items = [{
+                items = [{
                 "agent": r[0],
-                "total_closed": int(r[1]) if r[1] is not None else 0,
-                "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
-            } for r in rows]
+                    "total_closed": int(r[1]) if r[1] is not None else 0,
+                    "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
+                } for r in rows]
 
         payload = {
             "success": True,
@@ -756,64 +762,64 @@ def avg_resolution_time_business(
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            cur.execute("""
-                WITH parametros AS (
-                  SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
-                ),
-                base AS (
-                  SELECT t.hubspot_ticket_id, t.created_at, t.closed_at
-                  FROM resolved_tickets t
-                  WHERE t.closed_at >= %s::date
-                    AND t.closed_at <  (%s::date + INTERVAL '1 day')
-                ),
-                dias AS (
-                  SELECT
-                    b.hubspot_ticket_id,
-                    b.created_at,
-                    b.closed_at,
-                    gs::date AS d
-                  FROM base b
-                  JOIN LATERAL generate_series(
-                    date_trunc('day', b.created_at),
-                    date_trunc('day', b.closed_at),
-                    interval '1 day'
-                  ) gs ON TRUE
-                ),
-                ventanas AS (
-                  SELECT
-                    hubspot_ticket_id,
-                    GREATEST(d + (SELECT hora_inicio_laboral FROM parametros), created_at) AS win_start,
-                    LEAST   (d + (SELECT hora_fin_laboral   FROM parametros), closed_at)  AS win_end,
-                    EXTRACT(DOW FROM d)::int AS dow
-                  FROM dias
-                ),
-                filtrado AS (
-                  SELECT
-                    hubspot_ticket_id,
-                    CASE
-                      WHEN dow NOT IN (0,6) AND win_end > win_start
-                        THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
-                      ELSE 0
-                    END AS work_seconds
-                  FROM ventanas
-                ),
-                tiempos_por_ticket AS (
-                  SELECT hubspot_ticket_id,
-                         SUM(work_seconds)/3600.0 AS horas_laborales_resolucion
-                  FROM filtrado
-                  GROUP BY hubspot_ticket_id
-                )
-                SELECT
-                  COUNT(*)::int AS total_tickets_cerrados,
-                  ROUND(AVG(horas_laborales_resolucion)::numeric, 2) AS promedio_general_horas
-                FROM tiempos_por_ticket;
-            """, (from_dt, to_dt))
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                cur.execute("""
+                    WITH parametros AS (
+                      SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
+                    ),
+                    base AS (
+                      SELECT t.hubspot_ticket_id, t.created_at, t.closed_at
+                      FROM resolved_tickets t
+                      WHERE t.closed_at >= %s::date
+                        AND t.closed_at <  (%s::date + INTERVAL '1 day')
+                    ),
+                    dias AS (
+                      SELECT
+                        b.hubspot_ticket_id,
+                        b.created_at,
+                        b.closed_at,
+                        gs::date AS d
+                      FROM base b
+                      JOIN LATERAL generate_series(
+                        date_trunc('day', b.created_at),
+                        date_trunc('day', b.closed_at),
+                        interval '1 day'
+                      ) gs ON TRUE
+                    ),
+                    ventanas AS (
+                      SELECT
+                        hubspot_ticket_id,
+                        GREATEST(d + (SELECT hora_inicio_laboral FROM parametros), created_at) AS win_start,
+                        LEAST   (d + (SELECT hora_fin_laboral   FROM parametros), closed_at)  AS win_end,
+                        EXTRACT(DOW FROM d)::int AS dow
+                      FROM dias
+                    ),
+                    filtrado AS (
+                      SELECT
+                        hubspot_ticket_id,
+                        CASE
+                          WHEN dow NOT IN (0,6) AND win_end > win_start
+                            THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
+                          ELSE 0
+                        END AS work_seconds
+                      FROM ventanas
+                    ),
+                    tiempos_por_ticket AS (
+                      SELECT hubspot_ticket_id,
+                             SUM(work_seconds)/3600.0 AS horas_laborales_resolucion
+                      FROM filtrado
+                      GROUP BY hubspot_ticket_id
+                    )
+                    SELECT
+                      COUNT(*)::int AS total_tickets_cerrados,
+                      ROUND(AVG(horas_laborales_resolucion)::numeric, 2) AS promedio_general_horas
+                    FROM tiempos_por_ticket;
+                """, (from_dt, to_dt))
 
-            row = cur.fetchone()
-            total = int(row[0]) if row and row[0] is not None else 0
-            avg   = float(row[1]) if row and row[1] is not None else 0.0
+                row = cur.fetchone()
+                total = int(row[0]) if row and row[0] is not None else 0
+                avg   = float(row[1]) if row and row[1] is not None else 0.0
 
         # Big number - Simple payload, frontend lo renderiza con BigNumberCard
         payload = {
@@ -856,9 +862,9 @@ def avg_resolution_time_by_source_business(
     order_sql = "ASC" if order_norm == "asc" else "DESC"
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            cur.execute(f"""
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                cur.execute(f"""
                 WITH parametros AS (
                   SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
                 ),
@@ -925,14 +931,14 @@ def avg_resolution_time_by_source_business(
                 SELECT source, total_tickets_cerrados, promedio_horas
                 FROM por_source
                 ORDER BY promedio_horas {order_sql}, total_tickets_cerrados DESC, source ASC;
-            """, (from_dt, to_dt))
+                """, (from_dt, to_dt))
 
-            rows = cur.fetchall()
-            items = [{
-                "source": r[0],
-                "tickets": int(r[1]) if r[1] is not None else 0,
-                "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
-            } for r in rows]
+                rows = cur.fetchall()
+                items = [{
+                    "source": r[0],
+                    "tickets": int(r[1]) if r[1] is not None else 0,
+                    "avg_hours_business": float(r[2]) if r[2] is not None else 0.0
+                } for r in rows]
 
         # Template-based approach
         sortBy = "-x" if order_norm == "desc" else "x"
@@ -980,66 +986,66 @@ def slow_cases_business(
         raise HTTPException(status_code=400, detail="'from' no puede ser mayor que 'to'")
 
     try:
-        conn = get_db_connection()
-        with conn, conn.cursor() as cur:
-            cur.execute("""
-                WITH parametros AS (
-                  SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
-                ),
-                base AS (
-                  SELECT
-                    t.hubspot_ticket_id,
-                    t.subject,
-                    COALESCE(NULLIF(TRIM(t.owner_name), ''), 'Sin asignar') AS owner_name,
-                    COALESCE(NULLIF(TRIM(t.source), ''), 'Desconocido')    AS source,
-                    t.created_at,
-                    t.closed_at
-                  FROM resolved_tickets t
-                  WHERE t.closed_at >= %s::date
-                    AND t.closed_at <  (%s::date + INTERVAL '1 day')
-                ),
-                dias AS (
-                  SELECT
-                    b.hubspot_ticket_id, b.subject, b.owner_name, b.source, b.created_at, b.closed_at,
-                    gs::date AS d
-                  FROM base b
-                  JOIN LATERAL generate_series(
-                    date_trunc('day', b.created_at),
-                    date_trunc('day', b.closed_at),
-                    interval '1 day'
-                  ) gs ON TRUE
-                ),
-                ventanas AS (
-                  SELECT
-                    hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
-                    GREATEST(d + (SELECT hora_inicio_laboral FROM parametros), created_at) AS win_start,
-                    LEAST   (d + (SELECT hora_fin_laboral   FROM parametros), closed_at)  AS win_end,
-                    EXTRACT(DOW FROM d)::int AS dow
-                  FROM dias
-                ),
-                filtrado AS (
-                  SELECT
-                    hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
-                    CASE WHEN dow NOT IN (0,6) AND win_end > win_start
-                          THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
-                         ELSE 0 END AS work_seconds
-                  FROM ventanas
-                ),
-                tiempos_por_ticket AS (
-                  SELECT
-                    hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
-                    SUM(work_seconds)/3600.0 AS horas_laborales_resolucion
-                  FROM filtrado
-                  GROUP BY hubspot_ticket_id, subject, owner_name, source, created_at, closed_at
-                )
-                SELECT
-                  hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
-                  ROUND(horas_laborales_resolucion::numeric, 2) AS horas_laborales_resolucion
-                FROM tiempos_por_ticket
-                ORDER BY horas_laborales_resolucion DESC, closed_at DESC
-                LIMIT %s;
-            """, (from_dt, to_dt, top))
-            rows = cur.fetchall()
+        with closing(get_db_connection()) as conn:
+            with conn, conn.cursor() as cur:
+                cur.execute("""
+                    WITH parametros AS (
+                      SELECT time '07:00' AS hora_inicio_laboral, time '17:00' AS hora_fin_laboral
+                    ),
+                    base AS (
+                      SELECT
+                        t.hubspot_ticket_id,
+                        t.subject,
+                        COALESCE(NULLIF(TRIM(t.owner_name), ''), 'Sin asignar') AS owner_name,
+                        COALESCE(NULLIF(TRIM(t.source), ''), 'Desconocido')    AS source,
+                        t.created_at,
+                        t.closed_at
+                      FROM resolved_tickets t
+                      WHERE t.closed_at >= %s::date
+                        AND t.closed_at <  (%s::date + INTERVAL '1 day')
+                    ),
+                    dias AS (
+                      SELECT
+                        b.hubspot_ticket_id, b.subject, b.owner_name, b.source, b.created_at, b.closed_at,
+                        gs::date AS d
+                      FROM base b
+                      JOIN LATERAL generate_series(
+                        date_trunc('day', b.created_at),
+                        date_trunc('day', b.closed_at),
+                        interval '1 day'
+                      ) gs ON TRUE
+                    ),
+                    ventanas AS (
+                      SELECT
+                        hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
+                        GREATEST(d + (SELECT hora_inicio_laboral FROM parametros), created_at) AS win_start,
+                        LEAST   (d + (SELECT hora_fin_laboral   FROM parametros), closed_at)  AS win_end,
+                        EXTRACT(DOW FROM d)::int AS dow
+                      FROM dias
+                    ),
+                    filtrado AS (
+                      SELECT
+                        hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
+                        CASE WHEN dow NOT IN (0,6) AND win_end > win_start
+                              THEN EXTRACT(EPOCH FROM (win_end - win_start))::bigint
+                             ELSE 0 END AS work_seconds
+                      FROM ventanas
+                    ),
+                    tiempos_por_ticket AS (
+                      SELECT
+                        hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
+                        SUM(work_seconds)/3600.0 AS horas_laborales_resolucion
+                      FROM filtrado
+                      GROUP BY hubspot_ticket_id, subject, owner_name, source, created_at, closed_at
+                    )
+                    SELECT
+                      hubspot_ticket_id, subject, owner_name, source, created_at, closed_at,
+                      ROUND(horas_laborales_resolucion::numeric, 2) AS horas_laborales_resolucion
+                    FROM tiempos_por_ticket
+                    ORDER BY horas_laborales_resolucion DESC, closed_at DESC
+                    LIMIT %s;
+                """, (from_dt, to_dt, top))
+                rows = cur.fetchall()
 
         items = [{
             "hubspot_ticket_id": r[0],
