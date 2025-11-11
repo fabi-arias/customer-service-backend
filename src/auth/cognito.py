@@ -31,9 +31,15 @@ ALLOWED_DOMAIN = "musclepoints.com"
 
 @lru_cache(maxsize=1)
 def _fetch_jwks() -> Dict[str, Any]:
-    r = requests.get(JWKS_URL, timeout=5)
-    r.raise_for_status()
-    return r.json()
+    """Obtiene y cachea las claves públicas (JWKS) de Cognito."""
+    try:
+        r = requests.get(JWKS_URL, timeout=5)
+        r.raise_for_status()
+        return r.json()
+    except requests.exceptions.RequestException as exc:
+        logger.error("Failed to fetch JWKS from Cognito", exc_info=True)
+        raise HTTPException(status_code=502, detail="Error fetching JWKS from Cognito") from exc
+
 
 
 def _get_key(kid: str) -> Dict[str, Any]:
@@ -122,7 +128,7 @@ def get_token_expiration_seconds(id_token: str) -> int:
         unverified_claims = jwt.get_unverified_claims(id_token)
         exp = unverified_claims.get("exp")
         if not exp:
-            logger.warning("Failed to parse token expiration, using default", exc_info=True)
+            logger.warning("Token missing expiration claim, using default")
             # Si no hay exp, usar default de 1 hora
             return 3600
         
@@ -133,6 +139,7 @@ def get_token_expiration_seconds(id_token: str) -> int:
         # (60 segundos de margen para evitar problemas de sincronización de reloj)
         return max(0, remaining - 60)
     except Exception:
+        logger.warning("Failed to parse token expiration, using default", exc_info=True)
         # Si hay error al decodificar, usar default de 1 hora
         return 3600
 
