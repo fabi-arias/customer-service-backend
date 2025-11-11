@@ -214,3 +214,4 @@ tmp/
 
 # FastAPI specific
 .pytest_cache/
+cache/
