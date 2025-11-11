@@ -79,7 +79,12 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     else:
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-    r = requests.post(token_url, data=data, headers=headers, timeout=10)
+    try:
+        r = requests.post(token_url, data=data, headers=headers, timeout=10)
+    except requests.exceptions.RequestException as exc:
+        logger.error("Token exchange request to Cognito failed", exc_info=True)
+        raise HTTPException(status_code=502, detail="Token exchange failed") from exc
+
     if r.status_code != 200:
         logger.warning(f"Token exchange failed with status {r.status_code}: {r.text}")
         raise HTTPException(status_code=401, detail="Token exchange failed")

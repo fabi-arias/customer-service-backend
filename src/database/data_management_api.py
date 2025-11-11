@@ -273,7 +273,8 @@ def top_categories(
         return payload
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error en endpoint de analytics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error al procesar la solicitud") from None
 
 
 @data_app.get("/analytics/sources")
