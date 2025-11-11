@@ -6,7 +6,7 @@ Solo accesible para Supervisores.
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from database.db_utils import get_db_connection
-from auth.deps import require_supervisor
+from auth.deps import current_user
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,11 +23,15 @@ class UpdateStatusBody(BaseModel):
 
 
 @router.get("/users")
-def list_users(me=Depends(require_supervisor)):
+def list_users(me=Depends(current_user)):
     """
     Lista todos los usuarios invitados.
-    Solo accesible para Supervisores.
+    TODO: Agregar validación de Supervisor cuando se implemente el nuevo sistema de scopes.
     """
+    # Validación temporal: verificar que el usuario tenga grupo Supervisor
+    groups = set(me.get("groups", []))
+    if "Supervisor" not in groups:
+        raise HTTPException(status_code=403, detail="Supervisor role required")
     conn = get_db_connection()
     try:
         with conn, conn.cursor() as cur:
@@ -69,11 +73,15 @@ def list_users(me=Depends(require_supervisor)):
 
 
 @router.patch("/users/{email}/role")
-def update_user_role(email: str, body: UpdateRoleBody, me=Depends(require_supervisor)):
+def update_user_role(email: str, body: UpdateRoleBody, me=Depends(current_user)):
     """
     Actualiza el rol de un usuario.
-    Solo accesible para Supervisores.
+    TODO: Agregar validación de Supervisor cuando se implemente el nuevo sistema de scopes.
     """
+    # Validación temporal: verificar que el usuario tenga grupo Supervisor
+    groups = set(me.get("groups", []))
+    if "Supervisor" not in groups:
+        raise HTTPException(status_code=403, detail="Supervisor role required")
     if body.role not in ("Agent", "Supervisor"):
         raise HTTPException(status_code=400, detail="Rol inválido. Debe ser 'Agent' o 'Supervisor'")
     
@@ -112,13 +120,17 @@ def update_user_role(email: str, body: UpdateRoleBody, me=Depends(require_superv
 
 
 @router.patch("/users/{email}/status")
-def update_user_status(email: str, body: UpdateStatusBody, me=Depends(require_supervisor)):
+def update_user_status(email: str, body: UpdateStatusBody, me=Depends(current_user)):
     """
     Actualiza el estado de un usuario.
-    Solo accesible para Supervisores.
+    TODO: Agregar validación de Supervisor cuando se implemente el nuevo sistema de scopes.
     
     Estados permitidos: pending, active, revoked
     """
+    # Validación temporal: verificar que el usuario tenga grupo Supervisor
+    groups = set(me.get("groups", []))
+    if "Supervisor" not in groups:
+        raise HTTPException(status_code=403, detail="Supervisor role required")
     if body.status not in ("pending", "active", "revoked"):
         raise HTTPException(status_code=400, detail="Estado inválido. Debe ser 'pending', 'active' o 'revoked'")
     

@@ -15,7 +15,7 @@ from services.bedrock_service import bedrock_service
 from database.db_utils import execute_query, test_connection
 from database.data_management_api import data_app
 from auth.cognito import exchange_code_for_tokens, verify_id_token
-from auth.deps import current_user, require_agent, require_supervisor
+from auth.deps import current_user
 from auth.invite_api import router as invite_router
 from auth.accept_api import router as accept_router
 from auth.allowlist_check import router as allowlist_router
@@ -306,15 +306,15 @@ async def auth_health():
     }
 
 
-# Ejemplos protegidos
-@app.get("/secure/agent")
-async def secure_agent(_=Depends(require_agent)):
-    return {"ok": True, "scope": "agent"}
+# Ejemplos protegidos (comentados - se eliminarán para empezar desde cero)
+# @app.get("/secure/agent")
+# async def secure_agent(_=Depends(require_agent)):
+#     return {"ok": True, "scope": "agent"}
 
 
-@app.get("/secure/supervisor")
-async def secure_supervisor(_=Depends(require_supervisor)):
-    return {"ok": True, "scope": "supervisor"}
+# @app.get("/secure/supervisor")
+# async def secure_supervisor(_=Depends(require_supervisor)):
+#     return {"ok": True, "scope": "supervisor"}
 
 # Registrar routers de invitación
 app.include_router(invite_router)

@@ -7,7 +7,7 @@ import urllib.request
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, EmailStr
 from database.db_utils import get_db_connection
-from auth.deps import require_supervisor
+from auth.deps import current_user
 from config.secrets import get_secret
 import boto3
 import logging
@@ -118,10 +118,10 @@ def _send_email(email: str, url: str):
 
 
 @router.post("/invite")
-def invite_user(body: InviteBody, me=Depends(require_supervisor)):
+def invite_user(body: InviteBody, me=Depends(current_user)):
     """
     Crea o renueva una invitación para un usuario.
-    Solo accesible para Supervisores.
+    TODO: Agregar validación de Supervisor cuando se implemente el nuevo sistema de scopes.
     
     Reglas de idempotencia:
     - Si no existe: crea fila pending con role y token
@@ -129,6 +129,10 @@ def invite_user(body: InviteBody, me=Depends(require_supervisor)):
     - Si existe active: regenera token (permite reenvío)
     - Si existe revoked: cambia a pending y genera token (rehabilita)
     """
+    # Validación temporal: verificar que el usuario tenga grupo Supervisor
+    groups = set(me.get("groups", []))
+    if "Supervisor" not in groups:
+        raise HTTPException(status_code=403, detail="Supervisor role required")
     if body.role not in ("Agent", "Supervisor"):
         raise HTTPException(status_code=400, detail="Rol inválido. Debe ser 'Agent' o 'Supervisor'")
     
