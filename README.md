@@ -91,7 +91,7 @@ El backend usa las mismas configuraciones que el proyecto original:
 ## 🐳 Docker (Opcional)
 
 ```dockerfile
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 WORKDIR /app
 COPY requirements.txt .

@@ -76,15 +76,24 @@ def accept_invite(token: str = Query(..., description="Token de invitación")):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error al consumir token: {str(e)}", exc_info=True)
+        # Log interno con stacktrace; no filtrar detalles al cliente.
+        logger.error("Error al consumir token", exc_info=True)
         error_msg = str(e)
-        if "expired" in error_msg.lower() or "expirado" in error_msg.lower():
+        # Normaliza para cotejar con y sin acentos.
+        try:
+            import unicodedata
+            msg_norm = unicodedata.normalize("NFKD", error_msg).encode("ascii", "ignore").decode().lower()
+        except Exception:
+            msg_norm = error_msg.lower()
+
+        if "expired" in msg_norm or "expirado" in msg_norm:
             raise HTTPException(status_code=400, detail="Token expirado")
-        elif "invalid" in error_msg.lower() or "inválido" in error_msg.lower():
+        elif "invalid" in msg_norm or "invalido" in msg_norm:
             raise HTTPException(status_code=400, detail="Token inválido")
         else:
-            raise HTTPException(status_code=500, detail=f"Error al procesar invitación: {error_msg}")
-    
+            # Mensaje neutro para evitar fugas de información.
+            raise HTTPException(status_code=500, detail="Error al procesar invitación") from None
+
     return {
         "ok": True,
         "email": str(email),

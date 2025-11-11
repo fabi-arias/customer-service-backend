@@ -1,11 +1,12 @@
 # Backend API dependencies
-fastapi
-uvicorn[standard]
-python-dotenv
-boto3
-botocore
-requests
-psycopg2-binary
-pydantic
-python-jose[cryptography]
-python-multipart
+fastapi==0.119.0
+uvicorn[standard]==0.37.0
+python-dotenv==1.1.1
+boto3==1.40.53
+botocore==1.40.53
+requests==2.32.5
+psycopg2-binary==2.9.11
+pydantic==2.12.2
+python-jose[cryptography]==3.5.0
+python-multipart==0.0.20
+ecdsa==0.19.2
