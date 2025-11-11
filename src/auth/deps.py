@@ -45,26 +45,13 @@ def current_user(req: Request) -> Dict[str, Any]:
     email = (claims.get("email") or "").lower()
     if not email or not is_allowed_email(email):
         raise HTTPException(status_code=403, detail="Email domain not allowed")
-    groups = set(extract_groups(claims))
-    if not (groups & ALLOWED_GROUPS):
+    
+    groups_list = extract_groups(claims)          # <- lista intacta, orden estable
+    groups_set = set(groups_list)                 # <- para checks
+    
+    if not (groups_set & ALLOWED_GROUPS):
         raise HTTPException(status_code=403, detail="Required group not present")
-    # allowlist DB
+    
     _check_allowlist(email)
-    return {"email": email, "groups": list(groups), "claims": claims}
+    return {"email": email, "groups": groups_list, "claims": claims}   # <- devuelve lista
 
-def require_agent(user = Depends(current_user)):
-    g = set(user["groups"])
-    if not ({"Agent","Supervisor"} & g):
-        raise HTTPException(status_code=403, detail="Agent role required")
-    return user
-
-def require_supervisor(user = Depends(current_user)):
-    """
-    Requiere que el usuario tenga grupo 'Supervisor' en Cognito.
-    No verifica el rol en la base de datos, solo el grupo de Cognito.
-    """
-    if "Supervisor" not in set(user["groups"]):
-        raise HTTPException(status_code=403, detail="Supervisor role required")
-    # No verificamos el rol en DB porque el grupo de Cognito es la fuente de verdad
-    # El rol en DB puede ser diferente (ej: usuario invitado como Agent pero promovido a Supervisor en Cognito)
-    return user
