@@ -31,23 +31,6 @@ class HubSpotConfig:
 class BedrockConfig:
     """Configuración para Amazon Bedrock Agent."""
     
-    
-    #@property
-    #def aws_access_key_id(self) -> str:
-    #    """AWS Access Key ID."""
-    #    key = get_secret("AWS_ACCESS_KEY_ID")
-    #    if not key:
-    #        raise ValueError("AWS_ACCESS_KEY_ID no está configurado")
-    #    return key
-    
-    #@property
-    #def aws_secret_access_key(self) -> str:
-    #    """AWS Secret Access Key."""
-    #    key = get_secret("AWS_SECRET_ACCESS_KEY")
-    #    if not key:
-    #        raise ValueError("AWS_SECRET_ACCESS_KEY no está configurado")
-    #    return key
-    
     @property
     def region_name(self) -> str:
         """Región de AWS."""
@@ -151,7 +134,6 @@ class CognitoConfig:
     @property
     def redirect_uri(self) -> str:
         return get_secret("OAUTH_REDIRECT_URI", "") or ""
-
 
 # Instancias globales de configuración
 settings = Settings()
