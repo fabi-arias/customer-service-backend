@@ -44,6 +44,7 @@ class BedrockAgentService:
         user_input: str,
         session_id: Optional[str] = None,
         enable_trace: bool = False,
+        session_attributes: Optional[Dict[str, str]] = None,  # ← nuevo
     ) -> Dict[str, Any]:
         """
         Invoca el agente de Bedrock con el input del usuario con lógica de reintentos.
@@ -67,6 +68,24 @@ class BedrockAgentService:
             "inputText": user_input,
             "enableTrace": enable_trace,
         }
+
+        if session_attributes:
+            # Bedrock Agents espera este shape para compartir contexto
+            params["sessionState"] = {
+                "sessionAttributes": {k: str(v) for k, v in session_attributes.items()}
+            }
+
+
+        print("\n🟣 [DEBUG] Parámetros de invoke_agent enviados a Bedrock:")
+        print(f"   sessionId: {session_id}")
+        preview = user_input if len(user_input) < 300 else user_input[:300] + "…"
+        print(f"   inputText: {preview}")
+        if "sessionState" in params:
+            print(f"   sessionState.sessionAttributes:")
+            for k, v in params["sessionState"]["sessionAttributes"].items():
+                print(f"      {k}: {v}")
+        else:
+            print("   (sin sessionState)")
 
         # Lógica de reintentos
         last_error = None
@@ -153,33 +172,89 @@ class BedrockAgentService:
 
     def _process_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Procesa la respuesta del agente de Bedrock (event stream -> texto).
-
-        Args:
-            response: Respuesta cruda del cliente de Bedrock.
-
-        Returns:
-            Dict procesado con la respuesta.
+        Procesa la respuesta del agente de Bedrock (event stream -> texto) y
+        extrae/imprime trazas útiles para depuración.
         """
         try:
-            completion = ""
-            trace_data = []
+            completion_text = ""
+            raw_traces = []
+            trace_summary = {
+                "routed_agent": None,          # p.ej. SpotMetrics / SpotTransactional / SpotKnowledge
+                "last_action_group": None,     # p.ej. "Analytics"
+                "last_api_path": None,         # p.ej. "/analytics/closed_volume"
+                "tool_invocations": [],        # lista de objetos {"actionGroup":..., "apiPath":..., "httpMethod":..., "status":...}
+                "notes": []                    # strings breves con hints detectados
+            }
 
-            # Leer el stream de respuesta
             for event in response.get("completion", []):
+                # chunks de texto
                 if "chunk" in event:
                     chunk = event["chunk"]
                     if "bytes" in chunk:
-                        completion += chunk["bytes"].decode("utf-8", errors="ignore")
+                        completion_text += chunk["bytes"].decode("utf-8", errors="ignore")
 
+                # trazas
                 if "trace" in event:
-                    trace_data.append(event["trace"])
+                    t = event["trace"]
+                    raw_traces.append(t)
+
+                    # ---- Heurísticas genéricas (no dependen de un schema estricto) ----
+                    # 1) ¿Viene info del enrutador/orquestador?
+                    #    Muchos proveedores incluyen alguna clave con "orchestrat" o "route".
+                    joined_keys = " ".join(t.keys())
+                    if "route" in joined_keys or "orchestrat" in joined_keys:
+                        trace_summary["notes"].append("orchestrator_trace_detected")
+
+                    # 2) ¿Se invocó un Action Group? (p.ej. SpotMetrics/OpenAPI)
+                    #    Buscamos campos comunes: actionGroup, apiPath, httpMethod, status, responseBody, etc.
+                    action_group = t.get("actionGroup") or t.get("action_group") \
+                                or t.get("toolName") or t.get("name")
+                    api_path = t.get("apiPath") or t.get("path") or t.get("endpoint")
+                    http_method = t.get("httpMethod") or t.get("method")
+                    status = t.get("httpStatusCode") or t.get("statusCode") or t.get("status")
+
+                    # Si parece un tool/action invocation, lo agregamos
+                    if action_group or api_path or http_method or status:
+                        trace_summary["tool_invocations"].append({
+                            "actionGroup": action_group,
+                            "apiPath": api_path,
+                            "httpMethod": http_method,
+                            "status": status
+                        })
+                        if action_group and not trace_summary["last_action_group"]:
+                            trace_summary["last_action_group"] = action_group
+                        if api_path:
+                            trace_summary["last_api_path"] = api_path
+
+                    # 3) ¿Podemos inferir el sub-agente?
+                    #    Si el action group es "Analytics" asumimos SpotMetrics.
+                    if action_group == "Analytics":
+                        trace_summary["routed_agent"] = trace_summary["routed_agent"] or "SpotMetrics"
+
+                    # 4) Pistas del orquestador (si usa etiquetas de agente)
+                    for k, v in t.items():
+                        if isinstance(v, str) and v in ("SpotMetrics","SpotTransactional","SpotKnowledge"):
+                            trace_summary["routed_agent"] = v
+                            break
+
+            # ---- PRINTS de DEBUG (bonitos) ----
+            print("🟣 [DEBUG] Bedrock _process_response → resumen de trazas:")
+            print(f"   routed_agent: {trace_summary['routed_agent']}")
+            print(f"   last_action_group: {trace_summary['last_action_group']}")
+            print(f"   last_api_path: {trace_summary['last_api_path']}")
+            if trace_summary["tool_invocations"]:
+                print("   tool_invocations:")
+                for i, inv in enumerate(trace_summary["tool_invocations"], 1):
+                    print(f"     #{i} AG={inv.get('actionGroup')} {inv.get('httpMethod')} {inv.get('apiPath')} → {inv.get('status')}")
+            else:
+                print("   tool_invocations: (none)")
 
             return {
                 "success": True,
-                "response": completion.strip(),
+                "response": completion_text.strip(),
                 "session_id": response.get("sessionId"),
-                "trace": trace_data if trace_data else None,
+                "trace": raw_traces,           # crudo (por si lo quieres guardar)
+                "trace_summary": trace_summary # resumido (para logs/UI)
             }
 
         except Exception as e:
@@ -188,6 +263,8 @@ class BedrockAgentService:
                 "error": str(e),
                 "message": "Error al procesar la respuesta del agente",
             }
+
+
 
     def get_agent_info(self) -> Dict[str, Any]:
         """

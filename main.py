@@ -90,16 +90,41 @@ async def health_check():
     return {"status": "healthy", "service": "customer-service-chat-api"}
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest):
+async def chat_endpoint(request: ChatRequest, me=Depends(current_user)):
     """
     Endpoint principal para el chat con el agente de Bedrock.
+    - Inyecta atributos de sesión (role, email, etc.) para que:
+      * El orquestador decida si puede invocar SpotMetrics
+      * La Lambda de SpotMetrics reciba el mismo contexto
     """
     try:
+        groups = set(me.get("groups", []))
+        role = "Supervisor" if "Supervisor" in groups else "Agent"
+
+        session_attrs = {
+            "role": role,
+            "user_email": me["email"],
+            "user_id": me["claims"].get("sub", ""),
+            "groups": ",".join(groups)
+        }
+
+        # DEBUG
+        print("\n🟢 [DEBUG] /api/chat → session_attributes:")
+        for k, v in session_attrs.items():
+            pv = v
+            if k in ("user_email", "user_id"):
+                pv = (v[:2] + "…") if "@" not in v else (v.split("@")[0][:2] + "…@" + v.split("@")[1])
+            print(f"   {k}: {pv}")
+
         response = bedrock_service.invoke_agent(
             user_input=request.message,
-            session_id=request.session_id
+            session_id=request.session_id,
+            enable_trace=True,
+            session_attributes=session_attrs,  # ← clave
         )
-        
+
+        print(f"🟢 [DEBUG] /api/chat ← invoke_agent keys: {list(response.keys())}\n")
+
         return ChatResponse(
             success=response.get("success", False),
             response=response.get("response"),
@@ -107,12 +132,11 @@ async def chat_endpoint(request: ChatRequest):
             error=response.get("error"),
             trace=response.get("trace")
         )
-        
+
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error interno del servidor: {str(e)}"
-        )
+        print(f"🔴 [DEBUG] /api/chat error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
+
 
 @app.get("/api/agent/info", response_model=AgentInfo)
 async def get_agent_info():
