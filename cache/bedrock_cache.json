@@ -1,0 +1,94 @@
+{
+  "ed2aa8156d70bd9cd02028814dd836e9": {
+    "timestamp": 1760993053.7941928,
+    "response": {
+      "success": true,
+      "response": "Aquí están los tickets creados el 5 de septiembre de 2025:\n\n```json\n{\n  \"tickets\": [\n    {\n      \"id\": \"29434563716\",\n      \"subject\": \"Fwd: Consulta respecto de cancelación de canje de puntos y pagondel Voucher de servicios confirmados para el itinerario número 6273815\",\n      \"created_at\": \"2025-09-06T01:48:36Z\",\n      \"closed_at\": \"2025-09-07T21:48:08.915Z\",\n      \"priority\": \"MEDIUM\",\n      \"source\": \"EMAIL\",\n      \"status\": \"Cerrado\",\n      \"itinerary_number\": null,\n      \"category\": \"Vuelos\",\n      \"owner_name\": \"Agente Soporte 2 Benefit Viajes\",\n      \"content\": \"Por favor ayuda con está atención.\\n\\nSaludos cordiales,\\n\\nVielka Andrea Vizcarra Meza\\n\\n\\n\\n\",\n      \"resolution\": \"Se brinda regulaciones\"\n    },\n    {\n      \"id\": \"29432472728\",\n      \"subject\": \"Re: Confirmación de Vuelo\",\n      \"created_at\": \"2025-09-06T01:40:06Z\",\n      \"closed_at\": \"2025-09-06T04:04:37.037Z\",\n      \"priority\": \"MEDIUM\",\n      \"source\": \"EMAIL\",\n      \"status\": \"Cerrado\",\n      \"itinerary_number\": null,\n      \"category\": \"Vuelos\",\n      \"owner_name\": \"Agente Soporte 2 Benefit Viajes\",\n      \"content\": \"Hola sres Interbank Benefit\\n\\ntengo el viaje confirmado con el número  5495831,\\n\\ndonde menciona que no es el número de reserva y el número de reserva me\\nllegara y hasta la fecha no tengo el numero\\n\\nagradecere me apoye con el número de Reserva, saludos\\n\\n*DANILO GARCIA R.*\\n*943751328*\\n\\n\\nEl jue, 19 jun 2025 a la(s) 2:07 p.m., <reservas@viajes.interbankbenefit.pe>\\nescribió:\\n\\n\",\n      \"resolution\": \"Se da info\"\n    },\n    {\n      \"id\": \"29461974636\",\n      \"subject\": \"REEMBOLSO DE TAXES - Devolucion tasas\",\n      \"created_at\": \"2025-09-05T23:03:05Z\",\n      \"closed_at\": \"2025-09-06T22:01:12.018Z\",\n      \"priority\": \"MEDIUM\",\n      \"source\": \"EMAIL\",\n      \"status\": \"Cerrado\",\n      \"itinerary_number\": null,\n      \"category\": \"Vuelos\",\n      \"owner_name\": \"Agente Soporte 2 Benefit Viajes\",\n      \"content\": \"Buenas tardes,\\n\\nCompre un vuelo con uds para Iquitos para el dia de mañana con regreso el\\ndomingo en la noche con el siguiente código:\\nLA5447311QZCF\\nLos tickets eran para 2 personas, para mi y mi novia\\nFernando Haro Vargas\\nAndrea Palomino Rivera\\n\\nPor motivos de fuerza mayor Andrea no viajará. Ya llame a Latam y cambie\\nlos pasajes. Primero separé los pasajes, la reserva original quedó a mi\\nnombre con salida el domingo 7 y regreso el mismo día.\\n\\nPero el pasaje de Andrea, quedo con una nueva reserva:\\nLA5444773RIJY\\n\\nSe que pedirles un reembolso probablemente es imposible, pero sí se pueden\\nregresar las tasas de embarque del pasaje de Andrea, lo que me gustaría\\nhacer. Muchas gracias de antemano\\n\\nSlds\\n\\n*F.*\",\n      \"resolution\": \"Se solicita boleto\"\n    },\n    {\n      \"id\": \"29466438483\",\n      \"subject\": \"Vuelo - José Romero (+51961902478) - N/A - Consultar si es posible endosar un pasaje aéreo a otra persona\",\n      \"created_at\": \"2025-09-05T22:59:43.152Z\",\n      \"closed_at\": \"2025-09-08T13:05:53.927Z\",\n      \"priority\": null,\n      \"source\": \"PHONE\",\n      \"status\": \"Cerrado\",\n      \"itinerary_number\": \"N/A\",\n      \"category\": \"Vuelos\",\n      \"owner_name\": \"Agente Soporte 3 Benefit Viajes\",\n      \"content\": \"El cliente José Romero se comunicó para consultar sobre el proceso de endosar un pasaje de Lima a Tumbes a otra persona y, posteriormente, sobre la posibilidad de cambiar la fecha y el destino del mismo pasaje. La agente Shirley le proporcionó los pasos a seguir, incluyendo un correo electrónico para enviar la solicitud y la documentación necesaria, así como información sobre los costos y los horarios de atención. Todas sus preguntas fueron resueltas.\",\n      \"resolution\": \"se da info\"\n    },\n    {\n      \"id\": \"29440486145\",\n      \"subject\": \"Vuelo - Jennifer Andrade (+51924083944) - 6184050 - Cliente solicita el reenvío de sus boletos de avión porque proporcionó una dirección de correo electrónico incorrecta al momento de la compra.\",\n      \"created_at\": \"2025-09-05T22:58:27.133Z\",\n      \"closed_at\": \"2025-09-11T18:11:08.360Z\",\n      \"priority\": null,\n      \"source\": \"PHONE\",\n      \"status\": \"Cerrado\",\n      \"itinerary_number\": \"6184050\",\n      \"category\": \"Vuelos\",\n      \"owner_name\": \"Agente Soporte 4 Benefit Viajes\",\n      \"content\": \"La cliente Jennifer Andrade contactó al servicio de soporte porque no había recibido los pasajes que compró con puntos Interbank debido a un error en el correo electrónico. El agente confirmó que los pasajes estaban emitidos y los reenvió a dos direcciones de correo electrónico proporcionadas por la cliente. Aunque la cliente no pudo encontrar los correos durante la llamada, el agente le aseguró que los boletos estaban confirmados y le aconsejó revisar las bandejas de spam o no deseados, o que su esposo revisara en una computadora. La cliente expresó alivio al confirmar la existencia de los boletos, pero mencionó que volvería a llamar el lunes si no los encontraba.\",\n      \"resolution\": \"Envio de boletos electrónicos\"\n    }\n  ]\n}\n```\n\n(Hay más resultados. Escribe 'siguiente' para continuar.)",
+      "session_id": "6db8a533-bea9-47f1-a022-ba1f0f71bf12",
+      "trace": null,
+      "parsed_data": {
+        "type": "json",
+        "objects": [
+          {
+            "tickets": [
+              {
+                "id": "29434563716",
+                "subject": "Fwd: Consulta respecto de cancelación de canje de puntos y pagondel Voucher de servicios confirmados para el itinerario número 6273815",
+                "created_at": "2025-09-06T01:48:36Z",
+                "closed_at": "2025-09-07T21:48:08.915Z",
+                "priority": "MEDIUM",
+                "source": "EMAIL",
+                "status": "Cerrado",
+                "itinerary_number": null,
+                "category": "Vuelos",
+                "owner_name": "Agente Soporte 2 Benefit Viajes",
+                "content": "Por favor ayuda con está atención.\n\nSaludos cordiales,\n\nVielka Andrea Vizcarra Meza\n\n\n\n",
+                "resolution": "Se brinda regulaciones"
+              },
+              {
+                "id": "29432472728",
+                "subject": "Re: Confirmación de Vuelo",
+                "created_at": "2025-09-06T01:40:06Z",
+                "closed_at": "2025-09-06T04:04:37.037Z",
+                "priority": "MEDIUM",
+                "source": "EMAIL",
+                "status": "Cerrado",
+                "itinerary_number": null,
+                "category": "Vuelos",
+                "owner_name": "Agente Soporte 2 Benefit Viajes",
+                "content": "Hola sres Interbank Benefit\n\ntengo el viaje confirmado con el número  5495831,\n\ndonde menciona que no es el número de reserva y el número de reserva me\nllegara y hasta la fecha no tengo el numero\n\nagradecere me apoye con el número de Reserva, saludos\n\n*DANILO GARCIA R.*\n*943751328*\n\n\nEl jue, 19 jun 2025 a la(s) 2:07 p.m., <reservas@viajes.interbankbenefit.pe>\nescribió:\n\n",
+                "resolution": "Se da info"
+              },
+              {
+                "id": "29461974636",
+                "subject": "REEMBOLSO DE TAXES - Devolucion tasas",
+                "created_at": "2025-09-05T23:03:05Z",
+                "closed_at": "2025-09-06T22:01:12.018Z",
+                "priority": "MEDIUM",
+                "source": "EMAIL",
+                "status": "Cerrado",
+                "itinerary_number": null,
+                "category": "Vuelos",
+                "owner_name": "Agente Soporte 2 Benefit Viajes",
+                "content": "Buenas tardes,\n\nCompre un vuelo con uds para Iquitos para el dia de mañana con regreso el\ndomingo en la noche con el siguiente código:\nLA5447311QZCF\nLos tickets eran para 2 personas, para mi y mi novia\nFernando Haro Vargas\nAndrea Palomino Rivera\n\nPor motivos de fuerza mayor Andrea no viajará. Ya llame a Latam y cambie\nlos pasajes. Primero separé los pasajes, la reserva original quedó a mi\nnombre con salida el domingo 7 y regreso el mismo día.\n\nPero el pasaje de Andrea, quedo con una nueva reserva:\nLA5444773RIJY\n\nSe que pedirles un reembolso probablemente es imposible, pero sí se pueden\nregresar las tasas de embarque del pasaje de Andrea, lo que me gustaría\nhacer. Muchas gracias de antemano\n\nSlds\n\n*F.*",
+                "resolution": "Se solicita boleto"
+              },
+              {
+                "id": "29466438483",
+                "subject": "Vuelo - José Romero (+51961902478) - N/A - Consultar si es posible endosar un pasaje aéreo a otra persona",
+                "created_at": "2025-09-05T22:59:43.152Z",
+                "closed_at": "2025-09-08T13:05:53.927Z",
+                "priority": null,
+                "source": "PHONE",
+                "status": "Cerrado",
+                "itinerary_number": "N/A",
+                "category": "Vuelos",
+                "owner_name": "Agente Soporte 3 Benefit Viajes",
+                "content": "El cliente José Romero se comunicó para consultar sobre el proceso de endosar un pasaje de Lima a Tumbes a otra persona y, posteriormente, sobre la posibilidad de cambiar la fecha y el destino del mismo pasaje. La agente Shirley le proporcionó los pasos a seguir, incluyendo un correo electrónico para enviar la solicitud y la documentación necesaria, así como información sobre los costos y los horarios de atención. Todas sus preguntas fueron resueltas.",
+                "resolution": "se da info"
+              },
+              {
+                "id": "29440486145",
+                "subject": "Vuelo - Jennifer Andrade (+51924083944) - 6184050 - Cliente solicita el reenvío de sus boletos de avión porque proporcionó una dirección de correo electrónico incorrecta al momento de la compra.",
+                "created_at": "2025-09-05T22:58:27.133Z",
+                "closed_at": "2025-09-11T18:11:08.360Z",
+                "priority": null,
+                "source": "PHONE",
+                "status": "Cerrado",
+                "itinerary_number": "6184050",
+                "category": "Vuelos",
+                "owner_name": "Agente Soporte 4 Benefit Viajes",
+                "content": "La cliente Jennifer Andrade contactó al servicio de soporte porque no había recibido los pasajes que compró con puntos Interbank debido a un error en el correo electrónico. El agente confirmó que los pasajes estaban emitidos y los reenvió a dos direcciones de correo electrónico proporcionadas por la cliente. Aunque la cliente no pudo encontrar los correos durante la llamada, el agente le aseguró que los boletos estaban confirmados y le aconsejó revisar las bandejas de spam o no deseados, o que su esposo revisara en una computadora. La cliente expresó alivio al confirmar la existencia de los boletos, pero mencionó que volvería a llamar el lunes si no los encontraba.",
+                "resolution": "Envio de boletos electrónicos"
+              }
+            ]
+          }
+        ],
+        "has_tickets": true,
+        "has_contacts": false
+      },
+      "response_type": "json"
+    },
+    "original_message": "Dame tickets creados el 5 de septiembre del 2025\n\n"
+  }
+}
