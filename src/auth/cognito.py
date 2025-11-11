@@ -78,6 +78,10 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
 
 
 def verify_id_token(id_token: str) -> Dict[str, Any]:
+    """
+    Verifica y decodifica el id_token de Cognito.
+    Valida: firma, audiencia, issuer, y expiración (exp).
+    """
     headers = jwt.get_unverified_header(id_token)
     key = _get_key(headers["kid"])
     claims = jwt.decode(
@@ -86,9 +90,36 @@ def verify_id_token(id_token: str) -> Dict[str, Any]:
         algorithms=["RS256"],
         audience=CLIENT_ID,     # aud debe ser tu client_id
         issuer=ISSUER,
-        options={"verify_at_hash": False},
+        options={
+            "verify_at_hash": False,
+            "verify_exp": True,  # CRÍTICO: Validar expiración explícitamente
+        },
     )
     return claims
+
+
+def get_token_expiration_seconds(id_token: str) -> int:
+    """
+    Obtiene los segundos hasta la expiración del token.
+    Retorna el tiempo restante en segundos, o 0 si ya expiró.
+    """
+    try:
+        # Decodificar sin verificar para obtener claims
+        unverified_claims = jwt.get_unverified_claims(id_token)
+        exp = unverified_claims.get("exp")
+        if not exp:
+            # Si no hay exp, usar default de 1 hora
+            return 3600
+        
+        current_time = int(time.time())
+        remaining = exp - current_time
+        
+        # Si ya expiró o queda menos de 60 segundos, retornar 0
+        # (60 segundos de margen para evitar problemas de sincronización de reloj)
+        return max(0, remaining - 60)
+    except Exception:
+        # Si hay error al decodificar, usar default de 1 hora
+        return 3600
 
 
 def extract_groups(claims: Dict[str, Any]) -> List[str]:

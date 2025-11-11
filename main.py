@@ -14,7 +14,7 @@ sys.path.insert(0, str(src_path))
 from services.bedrock_service import bedrock_service
 from database.db_utils import execute_query, test_connection
 from database.data_management_api import data_app
-from auth.cognito import exchange_code_for_tokens, verify_id_token
+from auth.cognito import exchange_code_for_tokens, verify_id_token, get_token_expiration_seconds
 from auth.deps import current_user
 from auth.invite_api import router as invite_router
 from auth.accept_api import router as accept_router
@@ -265,9 +265,13 @@ async def auth_exchange(code: str = Form(...)):
         email = (claims.get("email") or "").lower()
         logger.info(f"Token validado para email: {email}")
 
+        # Obtener expiración real del token para sincronizar cookie
+        token_max_age = get_token_expiration_seconds(id_token)
+        logger.info(f"Token expira en {token_max_age} segundos")
+
         resp = {"ok": True, "email": email}
         response = Response(content=json.dumps(resp), media_type="application/json")
-        # Cookie HttpOnly
+        # Cookie HttpOnly con expiración sincronizada con el token JWT
         response.set_cookie(
             key="id_token",
             value=id_token,
@@ -275,7 +279,7 @@ async def auth_exchange(code: str = Form(...)):
             secure=COOKIE_SECURE,
             samesite=COOKIE_SAMESITE,  # "lax" en local
             domain=None if COOKIE_DOMAIN == "localhost" else COOKIE_DOMAIN,
-            max_age=3600,  # 1h
+            max_age=token_max_age,  # Sincronizado con expiración real del JWT
             path="/",
         )
         logger.info(f"Sesión iniciada exitosamente para {email}")
