@@ -48,9 +48,9 @@ def _get_key(kid: str) -> Dict[str, Any]:
 
     try:
         jwks = _fetch_jwks()
-    except Exception as e:
+    except Exception:
         logger.error("Failed to refresh JWKS", exc_info=True)
-        raise HTTPException(status_code=502, detail="Error fetching JWKS from Cognito") from None
+        raise HTTPException(status_code=502, detail="Error fetching JWKS from Cognito")
 
     for k in jwks.get("keys", []):
         if k.get("kid") == kid:
@@ -58,17 +58,6 @@ def _get_key(kid: str) -> Dict[str, Any]:
 
     # If still not found, return 401 — key may truly be invalid.
     raise HTTPException(status_code=401, detail="JWKS key not found")
-
-
-def _client_secret_hash(username: str) -> str:
-    # Para public client, no uses esto. Solo si tu app client tiene secret.
-    if not CLIENT_SECRET:
-        return ""
-    message = bytes(username + CLIENT_ID, "utf-8")
-    key = bytes(CLIENT_SECRET, "utf-8")
-    secret_hash = base64.b64encode(hmac.new(key, message, digestmod=hashlib.sha256).digest()).decode()
-    return secret_hash
-
 
 def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
     token_url = f"{DOMAIN}/oauth2/token"
@@ -92,7 +81,8 @@ def exchange_code_for_tokens(code: str) -> Dict[str, Any]:
 
     r = requests.post(token_url, data=data, headers=headers, timeout=10)
     if r.status_code != 200:
-        raise HTTPException(status_code=401, detail=f"Token exchange failed: {r.text}")
+        logger.warning(f"Token exchange failed with status {r.status_code}: {r.text}")
+        raise HTTPException(status_code=401, detail="Token exchange failed")
     return r.json()
 
 
@@ -127,6 +117,7 @@ def get_token_expiration_seconds(id_token: str) -> int:
         unverified_claims = jwt.get_unverified_claims(id_token)
         exp = unverified_claims.get("exp")
         if not exp:
+            logger.warning("Failed to parse token expiration, using default", exc_info=True)
             # Si no hay exp, usar default de 1 hora
             return 3600
         

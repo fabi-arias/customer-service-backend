@@ -203,8 +203,8 @@ def export_resolved_tickets(
                     for r in cur.fetchall():
                         yield json.dumps(row_to_doc(r), ensure_ascii=False) + "\n"
         except Exception as e:
-            # Devuelve un documento de error y corta
-            yield json.dumps({"error": str(e)}) + "\n"
+            logger.error("Error exportando tickets", exc_info=True)
+            raise HTTPException(status_code=500, detail="Error al exportar tickets") from None
 
     return StreamingResponse(generate_ndjson(), media_type="application/x-ndjson")
 
