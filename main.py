@@ -313,7 +313,13 @@ async def auth_logout():
 
 @app.get("/auth/me")
 async def auth_me(user=Depends(current_user)):
-    return {"email": user["email"], "groups": user["groups"]}
+    claims = user.get("claims", {})
+    return {
+        "email": user["email"],
+        "groups": user["groups"],
+        "given_name": claims.get("given_name"),
+        "family_name": claims.get("family_name"),
+    }
 
 
 @app.get("/auth/health")
