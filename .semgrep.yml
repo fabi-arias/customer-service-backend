@@ -1,0 +1,5 @@
+# Semgrep configuration file to use OWASP Top 10 rules
+# See: https://semgrep.dev/r/p/owasp-top-ten
+
+# This file is a placeholder for CodeRabbit to know which ruleset to use
+# The actual ruleset is referenced in the .coderabbit.yaml file

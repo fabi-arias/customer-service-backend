@@ -1,0 +1,539 @@
+# CodeRabbit configuration file with Semgrep OWASP Top 10 integration
+
+# General settings
+reviews:
+  # Review settings
+  path_filters:
+    - "!dist/**"
+    - "!node_modules/**"
+    - "!vendor/**"
+    - "!build/**"
+    - "!**/*.min.js"
+    - "!**/*.lock"
+    - "!**/*.map"
+  
+  # Configure Semgrep integration
+  tools:
+    semgrep:
+      enabled: true
+      config: "p/owasp-top-ten"  # Use OWASP Top 10 rules directly from Semgrep Registry
+      severities:
+        - ERROR
+        - WARNING
+  
+  # Review instructions for all files
+  instructions: |
+    When reporting security vulnerabilities, always follow this structured format:
+    
+    ```
+    CRITICAL: [Vulnerability Type].
+    
+    This [code/class/function] contains [vulnerability description] that represent severe security risks.
+    
+    Vulnerability Details:
+    • OWASP Category: [OWASP reference] - [Category Name]
+    • CWE: [CWE ID] - [CWE Description]
+    • Severity: [CRITICAL/HIGH/MEDIUM/LOW]
+    
+    Attack Scenario:
+    [Brief description of how this vulnerability could be exploited and potential impact]
+    
+    Vulnerable Code (Lines X, Y, Z):
+    [Code snippet or reference to vulnerable lines]
+    
+    Secure Implementation:
+    [Example of proper secure implementation]
+    ```
+    
+    Example format:
+    ```
+    CRITICAL: Hard-coded secrets vulnerability.
+    
+    This class contains multiple hard-coded secrets that represent severe security risks.
+    
+    Vulnerability Details:
+    • OWASP Category: A02:2021 - Cryptographic Failures
+    • CWE: CWE-798 - Use of Hard-coded Credentials
+    • Severity: CRITICAL
+    
+    Attack Scenario:
+    Hard-coded secrets in source code are accessible to anyone with code access, enabling unauthorized API access and data breaches.
+    
+    Vulnerable Code (Lines 92, 95, 98):
+    private readonly apiKey = "sk-1234567890abcdef";
+    private readonly dbPassword = "admin123";
+    private readonly encryptionKey = "my-secret-key-123";
+    
+    Secure Implementation:
+    export class SecureApiClient {
+      private readonly apiKey: string;
+      private readonly dbPassword: string;
+      private readonly encryptionKey: string;
+      
+      constructor() {
+        this.apiKey = process.env.API_KEY || '';
+        this.dbPassword = process.env.DB_PASSWORD || '';
+        this.encryptionKey = process.env.ENCRYPTION_KEY || '';
+        
+        if (!this.apiKey || !this.dbPassword || !this.encryptionKey) {
+          throw new Error('Required environment variables not set');
+        }
+      }
+    }
+    ```
+  
+  # Optional: Add custom review instructions for specific file paths
+  path_instructions:
+    - path: "**/*.py"
+      instructions: |
+        When reviewing Python code, use this structured format for reporting security vulnerabilities:
+        
+        ```
+        CRITICAL: [Vulnerability Type].
+        
+        This [code/class/function] contains [vulnerability description] that represent severe security risks.
+        
+        Vulnerability Details:
+        • OWASP Category: [OWASP reference] - [Category Name]
+        • CWE: [CWE ID] - [CWE Description]
+        • Severity: [CRITICAL/HIGH/MEDIUM/LOW]
+        
+        Attack Scenario:
+        [Brief description of how this vulnerability could be exploited and potential impact]
+        
+        Vulnerable Code (Lines X, Y, Z):
+        [Code snippet or reference to vulnerable lines]
+        
+        Secure Implementation:
+        [Example of proper secure implementation]
+        ```
+        
+        Key areas to check in Python code:
+        
+        **A01: Broken Access Control - CWE-284/CWE-285/CWE-862**
+        - Missing authentication/authorization
+        - Direct object references without access control
+        - Bypass of access control checks
+        
+        **A02: Cryptographic Failures - CWE-327/CWE-328/CWE-798**
+        - Weak cryptographic algorithms (MD5, SHA1)
+        - Hardcoded secrets or credentials
+        - Missing encryption of sensitive data
+        
+        **A03: Injection - CWE-89/CWE-78/CWE-79**
+        - SQL injection vulnerabilities
+        - Command injection risks
+        - LDAP, XPath, or other injection flaws
+        
+        **A04: Insecure Design - CWE-352/CWE-306**
+        - Business logic flaws
+        - Race conditions
+        - Missing security controls
+        
+        **A05: Security Misconfiguration - CWE-16/CWE-611**
+        - Insecure default settings
+        - Unnecessary features enabled
+        - Missing security hardening
+        
+        **A06: Vulnerable Components - CWE-1104**
+        - Outdated dependencies
+        - Vulnerable components
+        
+        **A07: Auth Failures - CWE-287/CWE-384**
+        - Weak password policies
+        - Missing MFA
+        - Session fixation issues
+        
+        **A08: Software and Data Integrity - CWE-345/CWE-494**
+        - Insecure deserialization
+        - Unsigned data
+        
+        **A09: Logging/Monitoring - CWE-223/CWE-778**
+        - Missing logging of security events
+        - Insufficient monitoring
+        
+        **A10: SSRF - CWE-918**
+        - Unvalidated URLs in server requests
+        - Missing URL validation
+    
+    - path: "**/*.js"
+      instructions: |
+        When reviewing JavaScript/TypeScript code, use this structured format for reporting security vulnerabilities:
+        
+        ```
+        CRITICAL: [Vulnerability Type].
+        
+        This [code/class/function] contains [vulnerability description] that represent severe security risks.
+        
+        Vulnerability Details:
+        • OWASP Category: [OWASP reference] - [Category Name]
+        • CWE: [CWE ID] - [CWE Description]
+        • Severity: [CRITICAL/HIGH/MEDIUM/LOW]
+        
+        Attack Scenario:
+        [Brief description of how this vulnerability could be exploited and potential impact]
+        
+        Vulnerable Code (Lines X, Y, Z):
+        [Code snippet or reference to vulnerable lines]
+        
+        Secure Implementation:
+        [Example of proper secure implementation]
+        ```
+        
+        Key areas to check in JavaScript/TypeScript code:
+        
+        **A01: Broken Access Control - CWE-284/CWE-285/CWE-862**
+        - Client-side authorization bypass
+        - Missing access controls
+        - CORS misconfiguration
+        
+        **A02: Cryptographic Failures - CWE-327/CWE-328/CWE-798**
+        - Weak cryptographic algorithms
+        - Hardcoded API keys or secrets
+        - Insecure transmission of sensitive data
+        
+        **A03: Injection - CWE-79/CWE-89/CWE-94**
+        - XSS vulnerabilities (CWE-79)
+        - SQL injection in Node.js code (CWE-89)
+        - Template injection (CWE-94)
+        
+        **A04: Insecure Design - CWE-352/CWE-306**
+        - Business logic flaws
+        - Race conditions
+        - Missing security controls
+        
+        **A05: Security Misconfiguration - CWE-16/CWE-611**
+        - Insecure default settings
+        - Unnecessary features enabled
+        - Missing security headers
+        
+        **A06: Vulnerable Components - CWE-1104**
+        - Outdated npm packages
+        - Vulnerable dependencies
+        
+        **A07: Auth Failures - CWE-287/CWE-384**
+        - Weak authentication mechanisms
+        - Insecure session management
+        - Missing CSRF protection
+        
+        **A08: Software and Data Integrity - CWE-345/CWE-502**
+        - Insecure deserialization (eval, JSON.parse)
+        - Unsigned data
+        
+        **A09: Logging/Monitoring - CWE-223/CWE-778**
+        - Missing logging of security events
+        - Insufficient error handling
+        
+        **A10: SSRF - CWE-918**
+        - Unvalidated URLs in fetch/axios calls
+        - Missing URL validation
+
+    - path: "**/*.ts"
+      instructions: |
+        When reviewing JavaScript/TypeScript code, use this structured format for reporting security vulnerabilities:
+        
+        ```
+        CRITICAL: [Vulnerability Type].
+        
+        This [code/class/function] contains [vulnerability description] that represent severe security risks.
+        
+        Vulnerability Details:
+        • OWASP Category: [OWASP reference] - [Category Name]
+        • CWE: [CWE ID] - [CWE Description]
+        • Severity: [CRITICAL/HIGH/MEDIUM/LOW]
+        
+        Attack Scenario:
+        [Brief description of how this vulnerability could be exploited and potential impact]
+        
+        Vulnerable Code (Lines X, Y, Z):
+        [Code snippet or reference to vulnerable lines]
+        
+        Secure Implementation:
+        [Example of proper secure implementation]
+        ```
+        
+        Key areas to check in JavaScript/TypeScript code:
+        
+        **A01: Broken Access Control - CWE-284/CWE-285/CWE-862**
+        - Client-side authorization bypass
+        - Missing access controls
+        - CORS misconfiguration
+        
+        **A02: Cryptographic Failures - CWE-327/CWE-328/CWE-798**
+        - Weak cryptographic algorithms
+        - Hardcoded API keys or secrets
+        - Insecure transmission of sensitive data
+        
+        **A03: Injection - CWE-79/CWE-89/CWE-94**
+        - XSS vulnerabilities (CWE-79)
+        - SQL injection in Node.js code (CWE-89)
+        - Template injection (CWE-94)
+        
+        **A04: Insecure Design - CWE-352/CWE-306**
+        - Business logic flaws
+        - Race conditions
+        - Missing security controls
+        
+        **A05: Security Misconfiguration - CWE-16/CWE-611**
+        - Insecure default settings
+        - Unnecessary features enabled
+        - Missing security headers
+        
+        **A06: Vulnerable Components - CWE-1104**
+        - Outdated npm packages
+        - Vulnerable dependencies
+        
+        **A07: Auth Failures - CWE-287/CWE-384**
+        - Weak authentication mechanisms
+        - Insecure session management
+        - Missing CSRF protection
+        
+        **A08: Software and Data Integrity - CWE-345/CWE-502**
+        - Insecure deserialization (eval, JSON.parse)
+        - Unsigned data
+        
+        **A09: Logging/Monitoring - CWE-223/CWE-778**
+        - Missing logging of security events
+        - Insufficient error handling
+        
+        **A10: SSRF - CWE-918**
+        - Unvalidated URLs in fetch/axios calls
+        - Missing URL validation
+
+    - path: "**/*.jsx"
+      instructions: |
+        When reviewing JavaScript/TypeScript code, use this structured format for reporting security vulnerabilities:
+        
+        ```
+        CRITICAL: [Vulnerability Type].
+        
+        This [code/class/function] contains [vulnerability description] that represent severe security risks.
+        
+        Vulnerability Details:
+        • OWASP Category: [OWASP reference] - [Category Name]
+        • CWE: [CWE ID] - [CWE Description]
+        • Severity: [CRITICAL/HIGH/MEDIUM/LOW]
+        
+        Attack Scenario:
+        [Brief description of how this vulnerability could be exploited and potential impact]
+        
+        Vulnerable Code (Lines X, Y, Z):
+        [Code snippet or reference to vulnerable lines]
+        
+        Secure Implementation:
+        [Example of proper secure implementation]
+        ```
+        
+        Key areas to check in JavaScript/TypeScript code:
+        
+        **A01: Broken Access Control - CWE-284/CWE-285/CWE-862**
+        - Client-side authorization bypass
+        - Missing access controls
+        - CORS misconfiguration
+        
+        **A02: Cryptographic Failures - CWE-327/CWE-328/CWE-798**
+        - Weak cryptographic algorithms
+        - Hardcoded API keys or secrets
+        - Insecure transmission of sensitive data
+        
+        **A03: Injection - CWE-79/CWE-89/CWE-94**
+        - XSS vulnerabilities (CWE-79)
+        - SQL injection in Node.js code (CWE-89)
+        - Template injection (CWE-94)
+        
+        **A04: Insecure Design - CWE-352/CWE-306**
+        - Business logic flaws
+        - Race conditions
+        - Missing security controls
+        
+        **A05: Security Misconfiguration - CWE-16/CWE-611**
+        - Insecure default settings
+        - Unnecessary features enabled
+        - Missing security headers
+        
+        **A06: Vulnerable Components - CWE-1104**
+        - Outdated npm packages
+        - Vulnerable dependencies
+        
+        **A07: Auth Failures - CWE-287/CWE-384**
+        - Weak authentication mechanisms
+        - Insecure session management
+        - Missing CSRF protection
+        
+        **A08: Software and Data Integrity - CWE-345/CWE-502**
+        - Insecure deserialization (eval, JSON.parse)
+        - Unsigned data
+        
+        **A09: Logging/Monitoring - CWE-223/CWE-778**
+        - Missing logging of security events
+        - Insufficient error handling
+        
+        **A10: SSRF - CWE-918**
+        - Unvalidated URLs in fetch/axios calls
+        - Missing URL validation
+
+    - path: "**/*.tsx"
+      instructions: |
+        When reviewing JavaScript/TypeScript code, use this structured format for reporting security vulnerabilities:
+        
+        ```
+        CRITICAL: [Vulnerability Type].
+        
+        This [code/class/function] contains [vulnerability description] that represent severe security risks.
+        
+        Vulnerability Details:
+        • OWASP Category: [OWASP reference] - [Category Name]
+        • CWE: [CWE ID] - [CWE Description]
+        • Severity: [CRITICAL/HIGH/MEDIUM/LOW]
+        
+        Attack Scenario:
+        [Brief description of how this vulnerability could be exploited and potential impact]
+        
+        Vulnerable Code (Lines X, Y, Z):
+        [Code snippet or reference to vulnerable lines]
+        
+        Secure Implementation:
+        [Example of proper secure implementation]
+        ```
+        
+        Key areas to check in JavaScript/TypeScript code:
+        
+        **A01: Broken Access Control - CWE-284/CWE-285/CWE-862**
+        - Client-side authorization bypass
+        - Missing access controls
+        - CORS misconfiguration
+        
+        **A02: Cryptographic Failures - CWE-327/CWE-328/CWE-798**
+        - Weak cryptographic algorithms
+        - Hardcoded API keys or secrets
+        - Insecure transmission of sensitive data
+        
+        **A03: Injection - CWE-79/CWE-89/CWE-94**
+        - XSS vulnerabilities (CWE-79)
+        - SQL injection in Node.js code (CWE-89)
+        - Template injection (CWE-94)
+        
+        **A04: Insecure Design - CWE-352/CWE-306**
+        - Business logic flaws
+        - Race conditions
+        - Missing security controls
+        
+        **A05: Security Misconfiguration - CWE-16/CWE-611**
+        - Insecure default settings
+        - Unnecessary features enabled
+        - Missing security headers
+        
+        **A06: Vulnerable Components - CWE-1104**
+        - Outdated npm packages
+        - Vulnerable dependencies
+        
+        **A07: Auth Failures - CWE-287/CWE-384**
+        - Weak authentication mechanisms
+        - Insecure session management
+        - Missing CSRF protection
+        
+        **A08: Software and Data Integrity - CWE-345/CWE-502**
+        - Insecure deserialization (eval, JSON.parse)
+        - Unsigned data
+        
+        **A09: Logging/Monitoring - CWE-223/CWE-778**
+        - Missing logging of security events
+        - Insufficient error handling
+        
+        **A10: SSRF - CWE-918**
+        - Unvalidated URLs in fetch/axios calls
+        - Missing URL validation
+
+    - path: "**/*.rb"
+      instructions: |
+        When reviewing Ruby code, use this structured format for reporting security vulnerabilities:
+        
+        ```
+        CRITICAL: [Vulnerability Type].
+        
+        This [code/class/function] contains [vulnerability description] that represent severe security risks.
+        
+        Vulnerability Details:
+        • OWASP Category: [OWASP reference] - [Category Name]
+        • CWE: [CWE ID] - [CWE Description]
+        • Severity: [CRITICAL/HIGH/MEDIUM/LOW]
+        
+        Attack Scenario:
+        [Brief description of how this vulnerability could be exploited and potential impact]
+        
+        Vulnerable Code (Lines X, Y, Z):
+        [Code snippet or reference to vulnerable lines]
+        
+        Secure Implementation:
+        [Example of proper secure implementation]
+        ```
+        
+        Key areas to check in Ruby code:
+        
+        **A01: Broken Access Control - CWE-284/CWE-285/CWE-862**
+        - Missing authentication filters
+        - Direct object references without access control
+        - Bypass of access control checks
+        
+        **A02: Cryptographic Failures - CWE-327/CWE-328/CWE-798**
+        - Weak cryptographic algorithms (MD5, SHA1)
+        - Hardcoded secrets or credentials
+        - Missing encryption of sensitive data
+        
+        **A03: Injection - CWE-89/CWE-78/CWE-79**
+        - SQL injection vulnerabilities (CWE-89)
+        - Command injection risks (CWE-78)
+        - ERB template injection
+        
+        **A04: Insecure Design - CWE-352/CWE-306**
+        - Business logic flaws
+        - Race conditions
+        - Missing security controls
+        
+        **A05: Security Misconfiguration - CWE-16/CWE-611**
+        - Insecure default settings
+        - Unnecessary features enabled
+        - Missing security hardening
+        
+        **A06: Vulnerable Components - CWE-1104**
+        - Outdated gems
+        - Vulnerable dependencies
+        
+        **A07: Auth Failures - CWE-287/CWE-384**
+        - Weak authentication mechanisms
+        - Insecure session management
+        - Missing CSRF protection
+        
+        **A08: Software and Data Integrity - CWE-345/CWE-502**
+        - Insecure deserialization (CWE-502)
+        - Unsigned data (CWE-345)
+        
+        **A09: Logging/Monitoring - CWE-223/CWE-778**
+        - Missing logging of security events
+        - Insufficient error handling
+        
+        **A10: SSRF - CWE-918**
+        - Unvalidated URLs in HTTP requests
+        - Missing URL validation
+
+# Optional: Configure chat settings
+chat:
+  auto_reply: true
+
+# Optional: Configure PR summary settings
+summary:
+  enabled: true
+  model: default
+
+auto_review:
+  enabled: true
+  base_branches:
+      - muscle
+
+request_changes_workflow: true
+    
+github:
+  status_checks:
+    enabled: true
+    strict: true
+    
