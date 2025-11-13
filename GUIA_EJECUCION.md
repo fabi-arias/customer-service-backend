@@ -228,6 +228,7 @@ source venv/bin/activate
 
 # Ejecutar
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2 --access-log
 
 # Verificar
 curl http://localhost:8000/health
