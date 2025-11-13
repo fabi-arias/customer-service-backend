@@ -28,9 +28,10 @@ def change_role(payload: ChangeRolePayload, user=Depends(require_supervisor)):
         )
         print(f"[DEBUG admin_roles_api] POST /admin/roles/change: success, result={res}")
         return {"success": True, **res}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        print(f"[DEBUG admin_roles_api] POST /admin/roles/change ERROR: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 class RepairRolePayload(BaseModel):
@@ -45,9 +46,12 @@ def repair_role(payload: RepairRolePayload, user=Depends(require_supervisor)):
         res = repair_to_db_role(user["email"], str(payload.email), force_logout=payload.force_logout)
         print(f"[DEBUG admin_roles_api] POST /admin/roles/repair: success, result={res}")
         return {"success": True, **res}
+    except ValueError as e:
+        print(f"[DEBUG admin_roles_api] POST /admin/roles/repair ERROR: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         print(f"[DEBUG admin_roles_api] POST /admin/roles/repair ERROR: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @router.get("/inspect")
@@ -59,11 +63,14 @@ def inspect(email: EmailStr = Query(...), user=Depends(require_supervisor)):
 
     # DB
     conn = get_db_connection()
-    with conn, conn.cursor() as cur:
-        cur.execute("SELECT role, status FROM invited_users WHERE email = %s", (e,))
-        row = cur.fetchone()
-        db = {"role": row[0], "status": row[1]} if row else None
-        print(f"[DEBUG admin_roles_api] inspect: DB result={db}")
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT role, status FROM invited_users WHERE email = %s", (e,))
+            row = cur.fetchone()
+            db = {"role": row[0], "status": row[1]} if row else None
+            print(f"[DEBUG admin_roles_api] inspect: DB result={db}")
+    finally:
+        conn.close()
 
     # Cognito
     username = find_cognito_username_by_email(pool, e)

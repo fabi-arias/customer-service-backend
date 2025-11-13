@@ -72,89 +72,93 @@ def promote_or_demote(
     target_email = target_email.lower()
 
     conn = get_db_connection()
-    with conn:
-        # 1) Lee/actualiza DB
-        with conn.cursor() as cur:
-            cur.execute("SELECT role FROM invited_users WHERE email = %s", (target_email,))
-            row = cur.fetchone()
-            if not row:
+    try:
+        with conn:  # maneja commit/rollback
+            # 1) Lee/actualiza DB
+            with conn.cursor() as cur:
+                cur.execute("SELECT role FROM invited_users WHERE email = %s", (target_email,))
+                row = cur.fetchone()
+                if not row:
+                    _audit_admin_change(
+                        conn,
+                        admin_email,
+                        target_email,
+                        "change:db-miss",
+                        None,
+                        target_role,
+                        None,
+                        [],
+                        "user_not_in_DB",
+                        False,
+                    )
+                    raise ValueError("User not found in invited_users")
+
+                current_db_role = row[0]
+                db_changed = current_db_role != target_role
+                if db_changed:
+                    cur.execute(
+                        "UPDATE invited_users SET role = %s, updated_at = NOW() WHERE email = %s",
+                        (target_role, target_email),
+                    )
+
+            # 2) Sincroniza Cognito
+            username = find_cognito_username_by_email(pool, target_email)
+            if not username:
                 _audit_admin_change(
                     conn,
                     admin_email,
                     target_email,
-                    "change:db-miss",
-                    None,
+                    "change:cognito-miss",
+                    current_db_role,
                     target_role,
                     None,
                     [],
-                    "user_not_in_DB",
+                    "cognito_user_not_found; DB updated" if db_changed else "noop",
                     False,
                 )
-                raise ValueError("User not found in invited_users")
+                return {
+                    "ok": True,
+                    "db_changed": db_changed,
+                    "cognito_changed": False,
+                    "tokens_revoked": False,
+                    "note": "Cognito user not found; will sync on first login",
+                }
 
-            current_db_role = row[0]
-            db_changed = current_db_role != target_role
-            if db_changed:
-                cur.execute(
-                    "UPDATE invited_users SET role = %s, updated_at = NOW() WHERE email = %s",
-                    (target_role, target_email),
-                )
+            before, after, cg_changed = set_cognito_role(pool, username, target_role)
 
-        # 2) Sincroniza Cognito
-        username = find_cognito_username_by_email(pool, target_email)
-        if not username:
+            # 3) Revocación opcional
+            tokens_revoked = False
+            if force_logout and cg_changed:
+                try:
+                    global_sign_out(pool, username)
+                    tokens_revoked = True
+                except Exception:
+                    tokens_revoked = False  # no es crítico
+
+            # 4) Auditoría
+            status = "ok" if (db_changed or cg_changed) else "noop"
             _audit_admin_change(
                 conn,
                 admin_email,
                 target_email,
-                "change:cognito-miss",
+                "change",
                 current_db_role,
                 target_role,
-                None,
-                [],
-                "cognito_user_not_found; DB updated" if db_changed else "noop",
-                False,
+                username,
+                after,
+                status,
+                tokens_revoked,
             )
+
+            # 5) Respuesta
             return {
                 "ok": True,
                 "db_changed": db_changed,
-                "cognito_changed": False,
-                "tokens_revoked": False,
-                "note": "Cognito user not found; will sync on first login",
+                "cognito_changed": cg_changed,
+                "tokens_revoked": tokens_revoked,
             }
-
-        before, after, cg_changed = set_cognito_role(pool, username, target_role)
-
-        # 3) Revocación opcional
-        tokens_revoked = False
-        if force_logout and cg_changed:
-            try:
-                global_sign_out(pool, username)
-                tokens_revoked = True
-            except Exception:
-                tokens_revoked = False  # no es crítico
-
-        # 4) Auditoría
-        status = "ok" if (db_changed or cg_changed) else "noop"
-        _audit_admin_change(
-            conn,
-            admin_email,
-            target_email,
-            "change",
-            current_db_role,
-            target_role,
-            username,
-            after,
-            status,
-            tokens_revoked,
-        )
-
-    return {
-        "ok": True,
-        "db_changed": db_changed,
-        "cognito_changed": cg_changed,
-        "tokens_revoked": tokens_revoked,
-    }
+    finally:
+        conn.close()
 
 
 def repair_to_db_role(
@@ -167,70 +171,73 @@ def repair_to_db_role(
     target_email = target_email.lower()
 
     conn = get_db_connection()
-    with conn:
-        # DB: rol fuente
-        with conn.cursor() as cur:
-            cur.execute("SELECT role FROM invited_users WHERE email = %s", (target_email,))
-            row = cur.fetchone()
-            if not row:
+    try:
+        with conn:  # maneja commit/rollback
+            # DB: rol fuente
+            with conn.cursor() as cur:
+                cur.execute("SELECT role FROM invited_users WHERE email = %s", (target_email,))
+                row = cur.fetchone()
+                if not row:
+                    _audit_admin_change(
+                        conn,
+                        admin_email,
+                        target_email,
+                        "repair:db-miss",
+                        None,
+                        None,
+                        None,
+                        [],
+                        "user_not_in_DB",
+                        False,
+                    )
+                    raise ValueError("User not found in invited_users")
+                db_role = row[0]
+
+            username = find_cognito_username_by_email(pool, target_email)
+            if not username:
                 _audit_admin_change(
                     conn,
                     admin_email,
                     target_email,
-                    "repair:db-miss",
-                    None,
-                    None,
+                    "repair:cognito-miss",
+                    db_role,
+                    db_role,
                     None,
                     [],
-                    "user_not_in_DB",
+                    "cognito_user_not_found",
                     False,
                 )
-                raise ValueError("User not found in invited_users")
-            db_role = row[0]
+                return {
+                    "ok": True,
+                    "cognito_changed": False,
+                    "tokens_revoked": False,
+                    "note": "cognito user not found",
+                }
 
-        username = find_cognito_username_by_email(pool, target_email)
-        if not username:
+            before, after, cg_changed = set_cognito_role(pool, username, db_role)
+
+            tokens_revoked = False
+            if force_logout and cg_changed:
+                try:
+                    global_sign_out(pool, username)
+                    tokens_revoked = True
+                except Exception:
+                    tokens_revoked = False
+
+            status = "ok" if cg_changed else "noop"
             _audit_admin_change(
                 conn,
                 admin_email,
                 target_email,
-                "repair:cognito-miss",
+                "repair",
                 db_role,
                 db_role,
-                None,
-                [],
-                "cognito_user_not_found",
-                False,
+                username,
+                after,
+                status,
+                tokens_revoked,
             )
-            return {
-                "ok": True,
-                "cognito_changed": False,
-                "tokens_revoked": False,
-                "note": "cognito user not found",
-            }
 
-        before, after, cg_changed = set_cognito_role(pool, username, db_role)
-
-        tokens_revoked = False
-        if force_logout and cg_changed:
-            try:
-                global_sign_out(pool, username)
-                tokens_revoked = True
-            except Exception:
-                tokens_revoked = False
-
-        status = "ok" if cg_changed else "noop"
-        _audit_admin_change(
-            conn,
-            admin_email,
-            target_email,
-            "repair",
-            db_role,
-            db_role,
-            username,
-            after,
-            status,
-            tokens_revoked,
-        )
-
-    return {"ok": True, "cognito_changed": cg_changed, "tokens_revoked": tokens_revoked}
+            return {"ok": True, "cognito_changed": cg_changed, "tokens_revoked": tokens_revoked}
+    finally:
+        conn.close()
