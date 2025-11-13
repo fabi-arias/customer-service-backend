@@ -29,15 +29,37 @@ def _check_allowlist(email: str, expected_role: str | None = None) -> None:
             """, (email,))
         row = cur.fetchone()
         if not row:
-            raise HTTPException(status_code=403, detail="Not invited")
+            raise HTTPException(status_code=403, detail="Usuario no está autorizado")
         role, status = row
         if status != "active":
-            raise HTTPException(status_code=403, detail=f"Invitation status: {status}")
+            # Mensaje genérico para todos los casos de status no activo
+            raise HTTPException(status_code=403, detail="Usuario no está autorizado")
         if expected_role and role != expected_role:
             # Permitimos Supervisor acceder a rutas Agent
             if expected_role == "Agent" and role == "Supervisor":
                 return
             raise HTTPException(status_code=403, detail=f"Role mismatch: {role} vs {expected_role}")
+
+def check_user_status(email: str) -> tuple[str, str]:
+    """
+    Verifica el status del usuario en la DB.
+    Retorna (role, status) o lanza HTTPException si no existe o está revocado/pending.
+    """
+    conn = get_db_connection()
+    with conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT role, status
+            FROM invited_users
+            WHERE email = %s
+            """, (email,))
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="Usuario no está autorizado")
+        role, status = row
+        if status != "active":
+            # Mensaje genérico para todos los casos de status no activo
+            raise HTTPException(status_code=403, detail="Usuario no está autorizado")
+        return role, status
 
 def current_user(req: Request) -> Dict[str, Any]:
     token = _read_token_from_request(req)
@@ -54,4 +76,12 @@ def current_user(req: Request) -> Dict[str, Any]:
     
     _check_allowlist(email)
     return {"email": email, "groups": groups_list, "claims": claims}   # <- devuelve lista
+
+def require_supervisor(req: Request) -> Dict[str, Any]:
+    """Dependency que requiere que el usuario sea Supervisor."""
+    user = current_user(req)
+    groups_set = set(user["groups"])
+    if "Supervisor" not in groups_set:
+        raise HTTPException(status_code=403, detail="Supervisor role required")
+    return user
 

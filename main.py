@@ -20,6 +20,7 @@ from auth.invite_api import router as invite_router
 from auth.accept_api import router as accept_router
 from auth.allowlist_check import router as allowlist_router
 from auth.users_api import router as users_router
+from auth.admin_roles_api import router as admin_roles_router
 from config.secrets import get_secret
 from config.settings import cognito_config
 
@@ -265,6 +266,15 @@ async def auth_exchange(code: str = Form(...)):
         email = (claims.get("email") or "").lower()
         logger.info(f"Token validado para email: {email}")
 
+        # Verificar status del usuario en DB antes de crear sesión
+        from auth.deps import check_user_status
+        try:
+            role, status = check_user_status(email)
+            logger.info(f"Usuario {email} tiene status {status} y rol {role}")
+        except HTTPException:
+            # Re-lanzar el HTTPException con el mensaje apropiado
+            raise
+
         # Obtener expiración real del token para sincronizar cookie
         token_max_age = get_token_expiration_seconds(id_token)
         logger.info(f"Token expira en {token_max_age} segundos")
@@ -313,7 +323,13 @@ async def auth_logout():
 
 @app.get("/auth/me")
 async def auth_me(user=Depends(current_user)):
-    return {"email": user["email"], "groups": user["groups"]}
+    claims = user.get("claims", {})
+    return {
+        "email": user["email"],
+        "groups": user["groups"],
+        "given_name": claims.get("given_name"),
+        "family_name": claims.get("family_name"),
+    }
 
 
 @app.get("/auth/health")
@@ -349,6 +365,7 @@ app.include_router(invite_router)
 app.include_router(accept_router)
 app.include_router(allowlist_router)
 app.include_router(users_router)
+app.include_router(admin_roles_router)
 
 if __name__ == "__main__":
     import uvicorn
