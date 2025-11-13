@@ -1,6 +1,6 @@
 # src/auth/accept_api.py
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, constr
+from pydantic import BaseModel, Field, field_validator
 from database.db_utils import get_db_connection
 import logging
 import datetime as dt
@@ -9,7 +9,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 class AcceptInviteBody(BaseModel):
-    token: constr(min_length=1)
+    token: str = Field(min_length=1)
+
+    @field_validator('token')
+    @classmethod
+    def strip_token(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            # evita tokens solo con espacios
+            raise ValueError('Token cannot be empty or whitespace')
+        return stripped
 
 @router.post("/accept")
 def accept_invite(body: AcceptInviteBody):
@@ -17,11 +26,12 @@ def accept_invite(body: AcceptInviteBody):
     Consume un token de invitación y activa la cuenta del usuario.
     Después de activar, el usuario debe hacer login con Google via Cognito.
     """
-    token = body.token.strip()
+    token = body.token  # ya viene saneado por el validador
 
     conn = get_db_connection()
     try:
-        with conn, conn.cursor() as cur:
+        # usamos solo cursor como context manager y cerramos conn en finally
+        with conn.cursor() as cur:
             cur.execute("""
                 SELECT email, status, token_expires_at 
                 FROM invited_users 
@@ -64,5 +74,15 @@ def accept_invite(body: AcceptInviteBody):
     except Exception:
         logger.error("Error al consumir token", exc_info=True)
         raise HTTPException(status_code=500, detail="Error al procesar invitación") from None
+    finally:
+        # 🔒 cerrar conexión siempre para no dejar sockets abiertos
+        try:
+            conn.close()
+        except Exception:
+            pass
 
-    return {"ok": True, "email": str(email), "message": "Invitación activada correctamente. Ahora puedes iniciar sesión."}
+    return {
+        "ok": True,
+        "email": str(email),
+        "message": "Invitación activada correctamente. Ahora puedes iniciar sesión."
+    }
