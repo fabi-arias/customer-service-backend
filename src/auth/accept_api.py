@@ -42,8 +42,10 @@ def accept_invite(body: AcceptInviteBody):
                 cur.execute("""
                     UPDATE invited_users 
                     SET token = NULL, token_expires_at = NULL, updated_at = NOW()
-                    WHERE email = %s
-                """, (email,))
+                    WHERE email = %s AND token = %s
+                """, (email, token))
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=400, detail="Token inválido o ya consumido")
                 conn.commit()
                 logger.info("Token limpiado para usuario ya activo")
             else:
