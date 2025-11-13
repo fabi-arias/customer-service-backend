@@ -1,0 +1,106 @@
+# Entorno virtual
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Archivos de desarrollo y configuración local
+.env
+.env.local
+.env.development
+.env.test
+*.env
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Archivos del sistema Mac
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Archivos del editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Cache
+cache/
+*.cache
+.cache/
+.pytest_cache/
+
+# Documentación (mantener solo README.md si es necesario)
+*.md
+!README.md
+GUIA_*.md
+
+# Tests
+tests/
+test_*.py
+*_test.py
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Archivos temporales
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Archivos de distribución
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Jupyter Notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# Archivos de Python
+*.py[cod]
+*$py.class
+
+# Archivos de configuración local
+docker-compose.yml
+docker-compose.override.yml
+.dockerignore
+
+# Archivos de CI/CD (opcional, dependiendo de tu setup)
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+# Archivos de AWS locales (si los tienes)
+.aws/
+aws-exports.js
+
+# Archivos de Node (si hay alguno)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Archivos de IDE
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
