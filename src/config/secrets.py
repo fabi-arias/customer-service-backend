@@ -26,7 +26,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 DEFAULT_REGION = os.getenv("AWS_REGION", "us-east-1")
-SECRET_ID = os.getenv("SECRETS_MANAGER_ID", "sot-env")
+SECRET_ID = os.getenv("SECRETS_MANAGER_ID", "spot/env")
 REFRESH_SECONDS = int(os.getenv("SECRETS_REFRESH_SECONDS", "300"))
 
 

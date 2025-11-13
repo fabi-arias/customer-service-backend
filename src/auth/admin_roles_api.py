@@ -1,6 +1,6 @@
 # src/auth/admin_roles_api.py
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from auth.deps import require_supervisor
 from services.role_sync_service import promote_or_demote, repair_to_db_role, Role
 from database.db_utils import get_db_connection
@@ -11,7 +11,7 @@ router = APIRouter(prefix="/admin/roles", tags=["admin"])
 
 
 class ChangeRolePayload(BaseModel):
-    email: EmailStr
+    email: str
     role: Role
     force_logout: bool = True
 
@@ -35,7 +35,7 @@ def change_role(payload: ChangeRolePayload, user=Depends(require_supervisor)):
 
 
 class RepairRolePayload(BaseModel):
-    email: EmailStr
+    email: str
     force_logout: bool = True
 
 
@@ -55,7 +55,7 @@ def repair_role(payload: RepairRolePayload, user=Depends(require_supervisor)):
 
 
 @router.get("/inspect")
-def inspect(email: EmailStr = Query(...), user=Depends(require_supervisor)):
+def inspect(email: str = Query(...), user=Depends(require_supervisor)):
     print(f"[DEBUG admin_roles_api] GET /admin/roles/inspect: admin={user['email']}, email={email}")
     pool = cognito_config.user_pool_id
     e = str(email).lower()

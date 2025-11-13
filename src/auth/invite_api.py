@@ -5,7 +5,7 @@ from datetime import timezone
 import json
 import urllib.request
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from database.db_utils import get_db_connection
 from auth.deps import current_user
 from config.secrets import get_secret
@@ -29,7 +29,7 @@ SES_SENDER = get_secret("SES_SENDER", "no-reply@musclepoints.com") or "no-reply@
 
 
 class InviteBody(BaseModel):
-    email: EmailStr
+    email: str
     role: str  # "Agent" | "Supervisor"
 
 
