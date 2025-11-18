@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: eks-${APP}-ingress
+  name: eks-cus-ingress
   namespace: apps
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: 20m
