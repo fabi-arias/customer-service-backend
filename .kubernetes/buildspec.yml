@@ -1,0 +1,49 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      # Variables
+      - echo "Setting up environment variables"
+      - REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${APP}-${OWNER}-${ENVIRONMENT}
+      - CLUSTER_NAME=${EKS_CLUSTER_NAME}-${ENVIRONMENT}
+      - IMAGE_TAG=$(echo ${CODEBUILD_RESOLVED_SOURCE_VERSION} | cut -c 1-7)
+      - NEED_PREFIX=True
+      - LANGUAGE=es
+      - CLIENT=${OWNER}
+      - DOCKERFILE=Dockerfile
+      
+
+      # Login en ECR
+      - echo "Logging into Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $REPOSITORY_URI
+
+  build:
+    commands:
+      # Construcción de la imagen
+      - echo "Building Docker image..."
+      - docker buildx build --file $DOCKERFILE --platform linux/amd64 --build-arg LANGUAGE=$LANGUAGE --build-arg ENVIRONMENT=$ENVIRONMENT --build-arg NEED_PREFIX=$NEED_PREFIX -t $REPOSITORY_URI:$IMAGE_TAG .
+
+      # Subida de la imagen a ECR
+      - echo "Pushing Docker image to ECR..."
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+
+  post_build:
+    commands:
+      # Configuración de kubectl para EKS
+      - echo "Configuring kubectl to connect to EKS cluster..."
+      - aws eks update-kubeconfig --name $CLUSTER_NAME --region $AWS_DEFAULT_REGION
+
+      # Cambio de variables
+      - export FOLDER_MANIFESTS=.kubernetes/manifiestos/\*
+      - sed -i "s|\${APP}|$APP|g" $FOLDER_MANIFESTS
+      - sed -i "s|\${ACCOUNT}|$AWS_ACCOUNT_ID|g" $FOLDER_MANIFESTS
+      - sed -i "s|\${REGION}|$AWS_REGION|g" $FOLDER_MANIFESTS
+      - sed -i "s|\${OWNER}|$OWNER|g" $FOLDER_MANIFESTS
+      - sed -i "s|\${ENVIRONMENT}|$ENVIRONMENT|g" $FOLDER_MANIFESTS
+      - sed -i "s|\${IMAGE_TAG}|$IMAGE_TAG|g" $FOLDER_MANIFESTS
+      - sed -i "s|\${DOMINIO}|$DOMINIO|g" $FOLDER_MANIFESTS
+
+      # Despliegue en EKS
+      - echo "Deploying to EKS..."
+      - kubectl apply -f .kubernetes/manifiestos/

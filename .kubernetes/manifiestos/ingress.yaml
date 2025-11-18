@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: eks-${APP}-ingress
+  namespace: apps
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 20m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+
+  rules:
+    - host: eks-dev-funbank.musclepoints.tech
+      http:
+        paths:
+          - pathType: Prefix
+            path: /${APP}
+            backend:
+              service:
+                name: svc-${APP}
+                port:
+                  name: ${APP}

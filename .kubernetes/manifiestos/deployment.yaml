@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP}
+  namespace: apps
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ${APP}
+  template:
+    metadata:
+      labels:
+        app: ${APP}
+    spec:
+      containers:
+      - name: ${APP}
+        image: ${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com/${APP}-${OWNER}-${ENVIRONMENT}:${IMAGE_TAG}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "50Mi"
+          limits:
+            cpu: "350m"
+            memory: "700Mi"
+        envFrom:
+        - secretRef:
+            name: ${APP}-${OWNER}-${ENVIRONMENT}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 33%
+      maxSurge: 33%
