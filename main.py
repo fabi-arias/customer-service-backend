@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 import sys
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Agregar el directorio src al path para imports
 src_path = Path(__file__).parent / "src"
@@ -33,19 +34,71 @@ app = FastAPI(
 # Montar FastAPI de gestión de datos
 app.mount("/data", data_app)
 
-# Configurar CORS para el frontend
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://127.0.0.1:3000", "http://127.0.0.1:3001"],  # React dev server
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # Configuración de cookies
 COOKIE_DOMAIN = get_secret("COOKIE_DOMAIN", "localhost") or "localhost"
 COOKIE_SECURE = (get_secret("COOKIE_SECURE", "false") or "false").lower() == "true"
 COOKIE_SAMESITE = get_secret("COOKIE_SAMESITE", "lax") or "lax"
+
+# Configurar CORS para el frontend (dinámico desde secrets)
+# Orígenes de desarrollo local (siempre incluidos)
+LOCAL_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+]
+
+# Inicializar con orígenes locales
+allowed_origins = LOCAL_ORIGINS.copy()
+
+# Obtener dominio del backend desde COOKIE_DOMAIN (si está configurado)
+backend_domain = get_secret("COOKIE_DOMAIN", "")
+if backend_domain and backend_domain != "localhost":
+    # Construir URL completa del backend
+    backend_url = f"https://{backend_domain}"
+    if backend_url not in allowed_origins:
+        allowed_origins.append(backend_url)
+
+# Obtener dominio del frontend desde OAUTH_REDIRECT_URI (si está configurado)
+oauth_redirect_uri = get_secret("OAUTH_REDIRECT_URI", "")
+if oauth_redirect_uri:
+    # Extraer el dominio base del redirect URI (ej: https://muscle.d36x6ebk3crti5.amplifyapp.com/login/callback -> https://muscle.d36x6ebk3crti5.amplifyapp.com)
+    try:
+        parsed = urlparse(oauth_redirect_uri)
+        frontend_url = f"{parsed.scheme}://{parsed.netloc}"
+        if frontend_url not in allowed_origins:
+            allowed_origins.append(frontend_url)
+    except Exception:
+        pass  # Si falla el parsing, continuar sin agregar
+
+# Obtener allowed origins adicionales desde variable de entorno (para API Gateway u otros)
+CORS_ORIGINS_STR = get_secret("CORS_ORIGINS", "")
+if CORS_ORIGINS_STR:
+    # Si está configurado, agregar a la lista (sin duplicados)
+    additional_origins = [origin.strip() for origin in CORS_ORIGINS_STR.split(",") if origin.strip()]
+    for origin in additional_origins:
+        if origin not in allowed_origins:
+            allowed_origins.append(origin)
+
+# Agregar también el dominio del frontend si está configurado explícitamente
+FRONTEND_URL = get_secret("FRONTEND_URL", "")
+if FRONTEND_URL and FRONTEND_URL not in allowed_origins:
+    allowed_origins.append(FRONTEND_URL)
+
+# También agregar variantes HTTPS si hay HTTP
+for origin in allowed_origins[:]:  # Copia de la lista para iterar
+    if origin.startswith("http://"):
+        https_version = origin.replace("http://", "https://", 1)
+        if https_version not in allowed_origins:
+            allowed_origins.append(https_version)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # =========================
 # Modelos Pydantic
