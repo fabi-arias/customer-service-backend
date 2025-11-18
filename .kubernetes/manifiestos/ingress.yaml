@@ -20,4 +20,4 @@ spec:
               service:
                 name: svc-${APP}
                 port:
-                  name: ${APP}
+                  name: cus-ser
