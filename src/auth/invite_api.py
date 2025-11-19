@@ -145,7 +145,7 @@ def invite_user(body: InviteBody, me=Depends(current_user)):
     
     email_lower = body.email.lower()
     token = secrets.token_urlsafe(32)
-    # ✅ zona horaria explícita (aware)
+    # zona horaria explicita (aware)
     exp = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=INVITE_EXP_DAYS)
     
     conn = get_db_connection()

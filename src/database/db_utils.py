@@ -80,5 +80,5 @@ def test_connection() -> bool:
                 result = cur.fetchone()
                 return result[0] == 1
     except Exception as e:
-        print(f"❌ Error de conexión a la base de datos: {e}")
+        print(f"[ERROR] Error de conexion a la base de datos: {e}")
         return False

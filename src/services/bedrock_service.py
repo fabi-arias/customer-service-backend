@@ -75,7 +75,7 @@ class BedrockAgentService:
                 "sessionAttributes": {k: str(v) for k, v in session_attributes.items()}
             }
 
-        print("\n🟣 [DEBUG] Parámetros de invoke_agent enviados a Bedrock:")
+        print("\n[DEBUG] Parametros de invoke_agent enviados a Bedrock:")
         print(f"   sessionId: {session_id}")
         preview = user_input if len(user_input) < 300 else user_input[:300] + "…"
         print(f"   inputText: {preview}")
@@ -107,7 +107,7 @@ class BedrockAgentService:
                 if attempt < self.config.max_retries:
                     wait_time = self.config.retry_delay * (2 ** attempt)  # Backoff exponencial
                     print(
-                        f"⚠️  Intento {attempt + 1} falló por {error_type}. "
+                        f"[WARN] Intento {attempt + 1} falló por {error_type}. "
                         f"Reintentando en {wait_time:.1f}s..."
                     )
                     time.sleep(wait_time)
@@ -141,7 +141,7 @@ class BedrockAgentService:
                 if attempt < self.config.max_retries:
                     wait_time = self.config.retry_delay * (2 ** attempt)
                     print(
-                        f"⚠️  Intento {attempt + 1} falló con error AWS: {error_code}. "
+                        f"[WARN] Intento {attempt + 1} falló con error AWS: {error_code}. "
                         f"Reintentando en {wait_time:.1f}s..."
                     )
                     time.sleep(wait_time)
@@ -166,7 +166,7 @@ class BedrockAgentService:
                 if attempt < self.config.max_retries:
                     wait_time = self.config.retry_delay * (2 ** attempt)
                     print(
-                        f"⚠️  Intento {attempt + 1} falló con error inesperado "
+                        f"[WARN] Intento {attempt + 1} falló con error inesperado "
                         f"({type(e).__name__}). Reintentando en {wait_time:.1f}s..."
                     )
                     time.sleep(wait_time)
@@ -275,8 +275,8 @@ class BedrockAgentService:
                             trace_summary["routed_agent"] = v
                             break
 
-            # ---- PRINTS de DEBUG (bonitos) ----
-            print("🟣 [DEBUG] Bedrock _process_response → resumen de trazas:")
+            # ---- PRINTS de DEBUG ----
+            print("[DEBUG] Bedrock _process_response → resumen de trazas:")
             print(f"   routed_agent: {trace_summary['routed_agent']}")
             print(f"   last_action_group: {trace_summary['last_action_group']}")
             print(f"   last_api_path: {trace_summary['last_api_path']}")
@@ -290,23 +290,10 @@ class BedrockAgentService:
             else:
                 print("   tool_invocations: (none)")
 
-            print("\n🟣 [DEBUG FRONTEND] === Respuesta completa procesada ===")
-            print("🟣 session_id devuelto:", session_id)
+            print("\n[DEBUG FRONTEND] === Respuesta completa procesada ===")
+            print("session_id devuelto:", session_id)
 
-            print("🟣 Texto generado por el agente:")
-            preview = (
-                completion_text[:500] + "..."
-                if len(completion_text) > 500
-                else completion_text
-            )
-            print(preview)
-
-            print("\n🟣 RAW TRACES:")
-            for i, t in enumerate(raw_traces, 1):
-                print(f"--- Trace #{i} ---")
-                print(t)
-
-            print("\n🟣 TRACE SUMMARY:")
+            print("\nTRACE SUMMARY:")
             print(trace_summary)
 
             return {
@@ -348,14 +335,14 @@ class BedrockAgentService:
             Dict con el resultado de la prueba.
         """
         try:
-            print("🔍 Probando conexión con Bedrock Agent...")
+            print("[DEBUG] Probando conexion con Bedrock Agent...")
             test_response = self.invoke_agent("Hola, ¿puedes ayudarme?")
             
             if test_response["success"]:
                 text = test_response.get("response", "") or ""
                 return {
                     "success": True,
-                    "message": "✅ Conexión e invocación correctas",
+                    "message": "Conexion e invocacion correctas",
                     "agent_info": self.get_agent_info(),
                     "test_response": (
                         text[:100] + "..." if len(text) > 100 else text
@@ -369,7 +356,7 @@ class BedrockAgentService:
                     return {
                         "success": False,
                         "message": (
-                            f"❌ La invocación falló después de "
+                            f"La invocacion fallo despues de "
                             f"{retry_info.get('attempts', '?')} intentos"
                         ),
                         "error": error_msg,
@@ -378,13 +365,13 @@ class BedrockAgentService:
                 else:
                     return {
                         "success": False,
-                        "message": "❌ La invocación no fue exitosa",
+                        "message": "La invocacion no fue exitosa",
                         "error": error_msg,
                     }
         except Exception as e:
             return {
                 "success": False,
-                "message": "❌ Error al probar la conexión",
+                "message": "Error al probar la conexion",
                 "error": str(e),
             }
 

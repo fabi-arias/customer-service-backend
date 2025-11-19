@@ -163,7 +163,7 @@ async def chat_endpoint(request: ChatRequest, me=Depends(current_user)):
         }
 
         # DEBUG
-        print("\n🟢 [DEBUG] /api/chat → session_attributes:")
+        print("\n[DEBUG] /api/chat -> session_attributes:")
         for k, v in session_attrs.items():
             pv = v
             if k in ("user_email", "user_id"):
@@ -177,7 +177,7 @@ async def chat_endpoint(request: ChatRequest, me=Depends(current_user)):
             session_attributes=session_attrs,  # ← clave
         )
 
-        print(f"🟢 [DEBUG] /api/chat ← invoke_agent keys: {list(response.keys())}\n")
+        print(f"[DEBUG] /api/chat <- invoke_agent keys: {list(response.keys())}\n")
 
         return ChatResponse(
             success=response.get("success", False),
@@ -188,7 +188,7 @@ async def chat_endpoint(request: ChatRequest, me=Depends(current_user)):
         )
 
     except Exception as e:
-        print(f"🔴 [DEBUG] /api/chat error: {e}")
+        print(f"[DEBUG] /api/chat error: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 
