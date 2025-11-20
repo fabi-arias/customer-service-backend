@@ -83,8 +83,6 @@ def update_user_role(email: str, body: UpdateRoleBody, me=Depends(current_user))
     Actualiza el rol de un usuario en DB y sincroniza con Cognito.
     Devuelve información detallada sobre los cambios aplicados.
     """
-    print(f"[DEBUG users_api] PATCH /auth/users/{email}/role: admin={me.get('email')}, role={body.role}")
-    
     groups = set(me.get("groups", []))
     if "Supervisor" not in groups:
         raise HTTPException(status_code=403, detail="Supervisor role required")
@@ -99,7 +97,6 @@ def update_user_role(email: str, body: UpdateRoleBody, me=Depends(current_user))
         pool = cognito_config.user_pool_id
         username_before = find_cognito_username_by_email(pool, email_lower)
         cognito_before = get_cognito_groups(pool, username_before) if username_before else []
-        print(f"[DEBUG users_api] update_user_role: cognito_before={cognito_before}, username={username_before}")
 
         # Usar el servicio de sincronización que maneja DB + Cognito
         result = promote_or_demote(
@@ -112,14 +109,6 @@ def update_user_role(email: str, body: UpdateRoleBody, me=Depends(current_user))
         # Obtener estado después del cambio
         username_after = find_cognito_username_by_email(pool, email_lower)
         cognito_after = get_cognito_groups(pool, username_after) if username_after else []
-        print(f"[DEBUG users_api] update_user_role: cognito_after={cognito_after}, username={username_after}")
-
-        # Validar post-condición: el rol objetivo debe estar en los grupos
-        if username_after:
-            if target_role not in cognito_after:
-                print(f"[DEBUG users_api] update_user_role WARNING: Post-condition failed! Expected {target_role} in {cognito_after}")
-            else:
-                print(f"[DEBUG users_api] update_user_role: Post-condition OK - {target_role} found in groups")
 
         logger.info(f"Rol actualizado para {email_lower}: {target_role} (DB changed: {result['db_changed']}, Cognito changed: {result['cognito_changed']})")
 
@@ -135,10 +124,8 @@ def update_user_role(email: str, body: UpdateRoleBody, me=Depends(current_user))
             "cognito_changed": result["cognito_changed"]
         }
     except ValueError as e:
-        print(f"[DEBUG users_api] update_user_role ERROR: ValueError - {e}")
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        print(f"[DEBUG users_api] update_user_role ERROR: {type(e).__name__}: {e}")
         logger.error("Error actualizando rol", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error al actualizar rol: {str(e)}") from None
 

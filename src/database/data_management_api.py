@@ -133,7 +133,7 @@ def ingest_batch(
                         skipped += 1
                         error_msg = f"Ticket {ticket.get('hubspot_ticket_id', f'#{i}')}: {str(e)}"
                         errors.append(error_msg)
-                        print(f"❌ {error_msg}")
+                        print(f"[ERROR] {error_msg}")
 
             response = {
                 "success": True,
