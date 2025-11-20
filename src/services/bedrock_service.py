@@ -75,17 +75,6 @@ class BedrockAgentService:
                 "sessionAttributes": {k: str(v) for k, v in session_attributes.items()}
             }
 
-        print("\n[DEBUG] Parametros de invoke_agent enviados a Bedrock:")
-        print(f"   sessionId: {session_id}")
-        preview = user_input if len(user_input) < 300 else user_input[:300] + "…"
-        print(f"   inputText: {preview}")
-        if "sessionState" in params:
-            print(f"   sessionState.sessionAttributes:")
-            for k, v in params["sessionState"]["sessionAttributes"].items():
-                print(f"      {k}: {v}")
-        else:
-            print("   (sin sessionState)")
-
         # Lógica de reintentos
         last_error = None
         for attempt in range(self.config.max_retries + 1):
@@ -275,24 +264,6 @@ class BedrockAgentService:
                             trace_summary["routed_agent"] = v
                             break
 
-            # ---- PRINTS de DEBUG ----
-            print("[DEBUG] Bedrock _process_response → resumen de trazas:")
-            print(f"   routed_agent: {trace_summary['routed_agent']}")
-            print(f"   last_action_group: {trace_summary['last_action_group']}")
-            print(f"   last_api_path: {trace_summary['last_api_path']}")
-            if trace_summary["tool_invocations"]:
-                print("   tool_invocations:")
-                for i, inv in enumerate(trace_summary["tool_invocations"], 1):
-                    print(
-                        f"     #{i} AG={inv.get('actionGroup')} "
-                        f"{inv.get('httpMethod')} {inv.get('apiPath')} → {inv.get('status')}"
-                    )
-            else:
-                print("   tool_invocations: (none)")
-
-            print("\n[DEBUG FRONTEND] === Respuesta completa procesada ===")
-            print("session_id devuelto:", session_id)
-
             print("\nTRACE SUMMARY:")
             print(trace_summary)
 
@@ -335,7 +306,6 @@ class BedrockAgentService:
             Dict con el resultado de la prueba.
         """
         try:
-            print("[DEBUG] Probando conexion con Bedrock Agent...")
             test_response = self.invoke_agent("Hola, ¿puedes ayudarme?")
             
             if test_response["success"]:

@@ -162,22 +162,12 @@ async def chat_endpoint(request: ChatRequest, me=Depends(current_user)):
             "groups": ",".join(groups)
         }
 
-        # DEBUG
-        print("\n[DEBUG] /api/chat -> session_attributes:")
-        for k, v in session_attrs.items():
-            pv = v
-            if k in ("user_email", "user_id"):
-                pv = (v[:2] + "…") if "@" not in v else (v.split("@")[0][:2] + "…@" + v.split("@")[1])
-            print(f"   {k}: {pv}")
-
         response = bedrock_service.invoke_agent(
             user_input=request.message,
             session_id=request.session_id,
             enable_trace=True,
             session_attributes=session_attrs,  # ← clave
         )
-
-        print(f"[DEBUG] /api/chat <- invoke_agent keys: {list(response.keys())}\n")
 
         return ChatResponse(
             success=response.get("success", False),
@@ -188,7 +178,6 @@ async def chat_endpoint(request: ChatRequest, me=Depends(current_user)):
         )
 
     except Exception as e:
-        print(f"[DEBUG] /api/chat error: {e}")
         raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
 
