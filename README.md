@@ -21,6 +21,7 @@ Backend FastAPI completo para el sistema de chat de servicio al cliente con inte
 - [Despliegue](#-despliegue)
 - [Docker](#-docker)
 - [Troubleshooting](#-troubleshooting)
+- [Documentación de Lambdas AWS](#-documentación-de-lambdas-aws)
 - [Contribución](#-contribución)
 
 ## 🎯 Descripción
@@ -740,4 +741,27 @@ python main.py
 # Producción con logs
 uvicorn main:app --host 0.0.0.0 --port 8000 --log-level debug
 ```
+
+## 📚 Documentación de Lambdas AWS
+
+El sistema utiliza varias funciones Lambda de AWS que se integran con Amazon Bedrock Agent. Para documentación completa y detallada de cada Lambda, consulta:
+
+**[LAMBDAS_DOCUMENTATION.md](./LAMBDAS_DOCUMENTATION.md)**
+
+Este documento incluye información detallada sobre:
+
+- **HubSpot Ops Lambda** - Integración con HubSpot CRM (tickets, contactos, owners, asociaciones)
+- **Interaction Ops Lambda** - Transcripciones de llamadas y hilos de correo
+- **Metrics Lambda** - Proxy para métricas y analytics desde el backend
+- **KB Ingest Lambda** - Ingesta de datos a Bedrock Knowledge Base
+- **Post Confirmation Lambda** - Asignación automática de roles en Cognito
+- **Pre Signup Lambda** - Validación de allowlist antes del registro
+
+Cada Lambda incluye:
+- Descripción y arquitectura
+- Endpoints y parámetros
+- Variables de entorno
+- Características técnicas
+- Límites y restricciones
+- Ejemplos de uso
 
